@@ -1,0 +1,129 @@
+@page "/inventory/{Location}"
+
+<PageTitle>@Title</PageTitle>
+
+<div class="location-head">
+    <h1>@Title</h1>
+    <a class="btn-add" href="/items/new">Add Item</a>
+</div>
+
+<div class="table-wrap">
+    <table class="inv-table">
+        <thead>
+            <tr>
+                <th class="col-id">ID</th>
+                <th>Item Name</th>
+                <th>Amount</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Items)
+            {
+                <tr>
+                    <td class="id">@item.Id</td>
+                    <td>@item.Name</td>
+                    <td>@item.Amount</td>
+                    <td>@item.Category</td>
+                    <td class="desc">@item.Description</td>
+                    <td class="actions">
+                        <button class="icon-btn" type="button" title="Edit" aria-label="Edit" @onclick="() => StartEdit(item)">✎</button>
+                        <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">🗑</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (Editing is not null)
+{
+    <div class="overlay" @onclick="CloseEdit"></div>
+    <aside class="edit-panel" role="dialog" aria-label="Edit Inventory Item">
+        <div class="edit-header">Edit Inventory Item</div>
+        <div class="edit-body">
+            <h2 class="edit-title">@Editing.Name</h2>
+            <div class="tags">
+                <span class="tag">@Editing.Category</span>
+                <span class="tag muted">Add Tag</span>
+            </div>
+
+            <div class="block">
+                <div class="block-title">Product Details:</div>
+                <div class="kv"><span>Brand:</span> <em>Optional</em></div>
+                <div class="kv"><span>UPC:</span> <em>Optional</em></div>
+            </div>
+
+            <div class="block">
+                <div class="block-title">Inventory:</div>
+                <div class="kv"><span>Total:</span> 1.5 Loafs (36 slices)</div>
+                <div class="kv"><span>Kitchen:</span> 12 slices / 24 slices</div>
+                <div class="kv"><span>Garage:</span> 24 slices / 24 slices</div>
+                <div class="kv"><span>Trigger Amount:</span> .25 Loafs (6 slices)</div>
+                <div class="kv"><span>Desired Total:</span> 3 Loafs (72 slices)</div>
+            </div>
+        </div>
+
+        <div class="edit-actions">
+            <button class="btn-save" type="button" @onclick="CloseEdit">Save</button>
+            <button class="btn-cancel" type="button" @onclick="CloseEdit">Cancel</button>
+        </div>
+    </aside>
+}
+
+@code {
+    [Parameter] public string? Location { get; set; }
+
+    private sealed record InventoryItem(string Id, string Name, string Amount, string Category, string Description);
+
+    private InventoryItem? Editing;
+
+    private string Title => ToTitle(Location);
+    private IReadOnlyList<InventoryItem> Items => GetItems(Location);
+
+    private void StartEdit(InventoryItem item) => Editing = item;
+    private void CloseEdit() => Editing = null;
+
+    private static string ToTitle(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return "Inventory";
+        return location
+            .Replace('-', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => char.ToUpperInvariant(w[0]) + w[1..])
+            .Aggregate((a, b) => $"{a} {b}");
+    }
+
+    private static IReadOnlyList<InventoryItem> GetItems(string? location)
+    {
+        // Sample data for UI scaffolding (replace with database/service later)
+        return location?.ToLowerInvariant() switch
+        {
+            "pantry" => new List<InventoryItem>
+            {
+                new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
+                new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
+                new("006", "Chicken Noodle", "5 cans", "Soup", "Lorem ipsum dolor sit amet consectetur."),
+                new("023", "Fruity Pebbles", "2 Boxes", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
+                new("027", "Flour", "5 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
+                new("032", "Sugar", "5 kg", "Baking", "Lorem ipsum dolor sit amet consectetur."),
+                new("056", "Sprite", "2 liters", "Drink", "Lorem ipsum dolor sit amet consectetur."),
+                new("063", "Costco Muffins", "24 Muffins", "Treat", "Lorem ipsum dolor sit amet consectetur."),
+            },
+            "food-storage" => new List<InventoryItem>
+            {
+                new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
+                new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),
+                new("103", "Olive Oil", "1 bottle", "Cooking", "Lorem ipsum dolor sit amet consectetur."),
+                new("104", "Pasta", "6 boxes", "Grain", "Lorem ipsum dolor sit amet consectetur."),
+            },
+            _ => new List<InventoryItem>
+            {
+                new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
+                new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
+            }
+        };
+    }
+}

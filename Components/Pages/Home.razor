@@ -1,7 +1,121 @@
 ﻿@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>All Inventory</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="page-head">
+    <h1 class="page-title">Kitchen</h1>
+</div>
 
-Welcome to your new app.
+<section class="inv-section">
+    <div class="section-head">
+        <h2>Pantry</h2>
+        <a class="btn-add" href="/items/new">Add Item</a>
+    </div>
+
+    <div class="table-wrap">
+        <table class="inv-table">
+            <thead>
+                <tr>
+                    <th class="col-id">ID</th>
+                    <th>Item Name</th>
+                    <th>Amount</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in PantryItems)
+                {
+                    <tr>
+                        <td class="id">@item.Id</td>
+                        <td>@item.Name</td>
+                        <td>@item.Amount</td>
+                        <td>@item.Category</td>
+                        <td class="desc">@item.Description</td>
+                        <td class="actions">
+                            <a class="icon-btn" href="/inventory/pantry" title="Edit" aria-label="Edit">
+                                ✎
+                            </a>
+                            <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">
+                                🗑
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<div class="spacer"></div>
+
+<div class="page-head">
+    <h1 class="page-title">Garage</h1>
+</div>
+
+<section class="inv-section">
+    <div class="section-head">
+        <h2>Food Storage</h2>
+        <a class="btn-add" href="/items/new">Add Item</a>
+    </div>
+
+    <div class="table-wrap">
+        <table class="inv-table">
+            <thead>
+                <tr>
+                    <th class="col-id">ID</th>
+                    <th>Item Name</th>
+                    <th>Amount</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in FoodStorageItems)
+                {
+                    <tr>
+                        <td class="id">@item.Id</td>
+                        <td>@item.Name</td>
+                        <td>@item.Amount</td>
+                        <td>@item.Category</td>
+                        <td class="desc">@item.Description</td>
+                        <td class="actions">
+                            <a class="icon-btn" href="/inventory/food-storage" title="Edit" aria-label="Edit">
+                                ✎
+                            </a>
+                            <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">
+                                🗑
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private sealed record InventoryItem(string Id, string Name, string Amount, string Category, string Description);
+
+    private IReadOnlyList<InventoryItem> PantryItems { get; } = new List<InventoryItem>
+    {
+        new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
+        new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
+        new("006", "Chicken Noodle", "5 cans", "Soup", "Lorem ipsum dolor sit amet consectetur."),
+        new("023", "Fruity Pebbles", "2 Boxes", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
+        new("027", "Flour", "5 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
+        new("032", "Sugar", "4 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
+        new("056", "Sprite", "2 liters", "Drink", "Lorem ipsum dolor sit amet consectetur."),
+        new("063", "Mini-Muffins", "1 box", "Treat", "Lorem ipsum dolor sit amet consectetur."),
+    };
+
+    private IReadOnlyList<InventoryItem> FoodStorageItems { get; } = new List<InventoryItem>
+    {
+        new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
+        new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),
+        new("103", "Olive Oil", "1 bottle", "Cooking", "Lorem ipsum dolor sit amet consectetur."),
+        new("104", "Pasta", "6 boxes", "Grain", "Lorem ipsum dolor sit amet consectetur."),
+    };
+}
