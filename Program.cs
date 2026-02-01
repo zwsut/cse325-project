@@ -1,6 +1,5 @@
 using cse325_project.Components;
 using Microsoft.EntityFrameworkCore;
-using cse325_project.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
