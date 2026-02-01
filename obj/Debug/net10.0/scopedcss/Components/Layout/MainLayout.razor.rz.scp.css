@@ -1,11 +1,11 @@
-.app-shell {
+.app-shell[b-iartc2v0r9] {
     min-height: 100vh;
     display: flex;
     background: var(--surface);
     color: var(--text);
 }
 
-.sidebar {
+.sidebar[b-iartc2v0r9] {
     width: 280px;
     background: var(--brand-800);
     color: #fff;
@@ -16,14 +16,14 @@
     box-shadow: 2px 0 0 rgba(0,0,0,0.08);
 }
 
-.main {
+.main[b-iartc2v0r9] {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
 }
 
-.topbar {
+.topbar[b-iartc2v0r9] {
     height: 56px;
     display: flex;
     align-items: center;
@@ -36,18 +36,18 @@
     z-index: 5;
 }
 
-.topbar-left {
+.topbar-left[b-iartc2v0r9] {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.topbar-title {
+.topbar-title[b-iartc2v0r9] {
     font-weight: 800;
     letter-spacing: 0.2px;
 }
 
-.icon-btn {
+.icon-btn[b-iartc2v0r9] {
     width: 36px;
     height: 36px;
     border-radius: 10px;
@@ -58,11 +58,11 @@
     justify-content: center;
 }
 
-.icon-btn:hover {
+.icon-btn:hover[b-iartc2v0r9] {
     background: rgba(255,255,255,0.14);
 }
 
-.hamburger {
+.hamburger[b-iartc2v0r9] {
     width: 18px;
     height: 2px;
     background: #fff;
@@ -70,8 +70,8 @@
     display: inline-block;
 }
 
-.hamburger::before,
-.hamburger::after {
+.hamburger[b-iartc2v0r9]::before,
+.hamburger[b-iartc2v0r9]::after {
     content: "";
     position: absolute;
     left: 0;
@@ -80,22 +80,22 @@
     background: #fff;
 }
 
-.hamburger::before { top: -6px; }
-.hamburger::after  { top:  6px; }
+.hamburger[b-iartc2v0r9]::before { top: -6px; }
+.hamburger[b-iartc2v0r9]::after  { top:  6px; }
 
-.topbar-right {
+.topbar-right[b-iartc2v0r9] {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 
-.user-name {
+.user-name[b-iartc2v0r9] {
     font-weight: 700;
     font-size: 0.95rem;
     white-space: nowrap;
 }
 
-.avatar {
+.avatar[b-iartc2v0r9] {
     width: 32px;
     height: 32px;
     border-radius: 999px;
@@ -108,15 +108,15 @@
     font-size: 0.85rem;
 }
 
-.app-content {
+.app-content[b-iartc2v0r9] {
     padding: 30px 30px 44px;
 }
 
 @media (max-width: 900px) {
-    .sidebar { width: 240px; }
-    .app-content { padding: 22px 18px 34px; }
+    .sidebar[b-iartc2v0r9] { width: 240px; }
+    .app-content[b-iartc2v0r9] { padding: 22px 18px 34px; }
 }
 
 @media (max-width: 640px) {
-    .sidebar { display: none; }
+    .sidebar[b-iartc2v0r9] { display: none; }
 }
