@@ -1,0 +1,62 @@
+<div class="sidebar-wrap">
+    <a class="brand" href="/">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-text">
+            <div class="brand-title">Kitchen Inventory</div>
+            <div class="brand-subtitle">Tracking System</div>
+        </div>
+    </a>
+
+    <NavLink class="primary-action" href="/items/new" Match="NavLinkMatch.All">
+        <span class="plus" aria-hidden="true">+</span>
+        <span>New Item</span>
+    </NavLink>
+
+    <div class="section">
+        <div class="section-title">Tools</div>
+        <nav class="menu">
+            <NavLink class="menu-item" href="/shopping-list">Shopping List</NavLink>
+            <NavLink class="menu-item" href="/categories">Categories</NavLink>
+        </nav>
+    </div>
+
+    <div class="section">
+        <div class="section-title row">
+            <span>Inventory</span>
+            <a class="section-action" href="/inventory/edit">Edit</a>
+        </div>
+        <nav class="menu">
+            <NavLink class="menu-item" href="/" Match="NavLinkMatch.All">All</NavLink>
+        </nav>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Kitchen</div>
+        <nav class="menu">
+            <NavLink class="menu-item" href="/inventory/pantry">Pantry</NavLink>
+            <NavLink class="menu-item" href="/inventory/fridge">Fridge</NavLink>
+            <NavLink class="menu-item" href="/inventory/freezer">Freezer</NavLink>
+
+            <div class="menu-label">Above Microwave</div>
+            <NavLink class="menu-item" href="/inventory/cupboard-a">Cupboard A</NavLink>
+            <NavLink class="menu-item" href="/inventory/cupboard-b">Cupboard B</NavLink>
+            <NavLink class="menu-item" href="/inventory/cupboard-c">Cupboard C</NavLink>
+        </nav>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Garage</div>
+        <nav class="menu">
+            <NavLink class="menu-item" href="/inventory/garage-freezer">Freezer</NavLink>
+            <NavLink class="menu-item" href="/inventory/food-storage">Food Storage</NavLink>
+        </nav>
+    </div>
+
+    <div class="sidebar-footer">
+        <div class="footer-avatar" aria-hidden="true">JS</div>
+        <div class="footer-meta">
+            <div class="footer-name">John Smith</div>
+            <div class="footer-role">Homeowner</div>
+        </div>
+    </div>
+</div>
