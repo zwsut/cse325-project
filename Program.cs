@@ -1,10 +1,13 @@
 using cse325_project.Components;
+using Microsoft.EntityFrameworkCore;
+using cse325_project.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
 
 var app = builder.Build();
 

@@ -1,3 +1,36 @@
-# .NET build artifacts
+# ===============================
+# .NET / Visual Studio
+# ===============================
 bin/
 obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ===============================
+# App settings / secrets
+# ===============================
+appsettings.Development.json
+appsettings.Production.json
+
+# Optional: ignore all environment-specific configs
+# appsettings.*.json
+# !appsettings.json
+
+# ===============================
+# User Secrets (local only)
+# ===============================
+**/secrets.json
+
+# ===============================
+# Logs
+# ===============================
+*.log
+
+# ===============================
+# OS junk
+# ===============================
+.DS_Store
+Thumbs.db
