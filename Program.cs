@@ -1,11 +1,23 @@
 using cse325_project.Components;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+DotNetEnv.Env.Load();
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+var supabaseSettings = builder.Configuration
+    .GetSection("Supabase")
+    .Get<SupabaseSettings>() ?? new SupabaseSettings();
+
+builder.Services.AddSingleton(supabaseSettings);
+builder.Services.AddScoped<ISupabaseService, SupabaseService>();
+builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthStateProvider>();
+builder.Services.AddAuthorizationCore();
 
 
 var app = builder.Build();
