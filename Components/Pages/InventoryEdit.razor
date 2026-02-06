@@ -1,6 +1,85 @@
 @page "/inventory/edit"
 
 <PageTitle>Edit Inventory</PageTitle>
-
-<h1 class="simple-title">Edit Inventory</h1>
+<h1 class="simple-title">Edit Inventory Location</h1>
 <p class="simple-muted">(Placeholder page) This can be your inventory location/category editor.</p>
+@using System.ComponentModel.DataAnnotations
+@using cse325_project.Services
+@inject InventoryService InventoryService
+
+<div class="form-wrap">
+	<EditForm Model="Model" OnValidSubmit="HandleValidSubmit">
+		<DataAnnotationsValidator />
+		<ValidationSummary />
+
+		<div class="form-row">
+			<label>Location Name</label>
+			<InputText @bind-Value="Model.Name" class="input" />
+			<ValidationMessage For="() => Model.Name" />
+		</div>
+
+		<div class="form-row">
+			<label>Slug (url)</label>
+			<InputText @bind-Value="Model.Slug" class="input" />
+			<ValidationMessage For="() => Model.Slug" />
+		</div>
+
+		<div class="form-row">
+			<label>Description</label>
+			<InputTextArea @bind-Value="Model.Description" class="input" />
+			<ValidationMessage For="() => Model.Description" />
+		</div>
+
+		<div class="form-actions">
+			<button class="btn-save" type="submit">Save</button>
+			<button class="btn-cancel" type="button" @onclick="Cancel">Cancel</button>
+			<button class="btn-danger" type="button" @onclick="ConfirmDelete">Delete</button>
+		</div>
+	</EditForm>
+    
+	@if (!string.IsNullOrEmpty(Message))
+	{
+		<div class="form-message">@Message</div>
+	}
+</div>
+
+@code {
+	private InventoryLocationDto Model { get; set; } = new InventoryLocationDto();
+	private string? Message;
+
+	protected override async Task OnInitializedAsync()
+	{
+		var locations = await InventoryService.GetLocationsAsync();
+		var first = locations.FirstOrDefault();
+		if (first is not null)
+		{
+			Model = first;
+		}
+	}
+
+	private async Task HandleValidSubmit()
+	{
+		try
+		{
+			await InventoryService.SaveLocationAsync(Model);
+			Message = "Saved successfully.";
+		}
+		catch (Exception ex)
+		{
+			Message = $"Error: {ex.Message}";
+		}
+	}
+
+	private void Cancel()
+	{
+		Message = null;
+	}
+
+	private async Task ConfirmDelete()
+	{
+		if (string.IsNullOrEmpty(Model.Id)) return;
+		await InventoryService.DeleteLocationAsync(Model.Id);
+		Message = "Deleted.";
+		Model = new InventoryLocationDto();
+	}
+}

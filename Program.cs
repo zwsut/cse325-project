@@ -1,11 +1,15 @@
 using cse325_project.Components;
 using Microsoft.EntityFrameworkCore;
+using cse325_project.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// Register scaffold inventory service (replace with real implementation later)
+builder.Services.AddSingleton<InventoryService>();
 
 
 var app = builder.Build();
