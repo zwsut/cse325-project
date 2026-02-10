@@ -2,6 +2,7 @@ using System.Security.Claims;
 using cse325_project.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Supabase.Gotrue.Exceptions;
@@ -50,8 +51,22 @@ app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapPost("/auth/login", async (HttpContext httpContext, ISupabaseService supabaseService, ILogger<Program> logger) =>
+app.MapPost("/auth/login", async (
+    HttpContext httpContext,
+    ISupabaseService supabaseService,
+    ILogger<Program> logger,
+    IAntiforgery antiforgery) =>
 {
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (AntiforgeryValidationException ex)
+    {
+        logger.LogWarning(ex, "Login POST failed antiforgery validation.");
+        return Results.BadRequest("Invalid request.");
+    }
+
     var form = await httpContext.Request.ReadFormAsync();
     var email = form["email"].ToString();
     var password = form["password"].ToString();
@@ -116,6 +131,37 @@ app.MapPost("/auth/login", async (HttpContext httpContext, ISupabaseService supa
         logger.LogWarning(ex, "Supabase sign-in failed.");
         return Results.Redirect("/login?error=unknown");
     }
+});
+
+app.MapPost("/auth/logout", async (
+    HttpContext httpContext,
+    ISupabaseService supabaseService,
+    ILogger<Program> logger,
+    IAntiforgery antiforgery) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (AntiforgeryValidationException ex)
+    {
+        logger.LogWarning(ex, "Logout POST failed antiforgery validation.");
+        return Results.BadRequest("Invalid request.");
+    }
+
+    logger.LogInformation("Logout POST received. ResponseStarted={Started}.", httpContext.Response.HasStarted);
+    try
+    {
+        await supabaseService.InitializeAsync();
+        await supabaseService.Client.Auth.SignOut();
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Supabase sign-out failed.");
+    }
+
+    await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/login");
 });
 
 app.MapStaticAssets();

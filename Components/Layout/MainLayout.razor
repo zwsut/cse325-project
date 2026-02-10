@@ -17,6 +17,10 @@
             <div class="topbar-right">
                 <span class="user-name">John Smith</span>
                 <div class="avatar" title="John Smith" aria-label="John Smith">JS</div>
+                <form method="post" action="/auth/logout" class="logout-form">
+                    <AntiforgeryToken />
+                    <button type="submit" class="logout-btn">Log out</button>
+                </form>
             </div>
         </header>
 
