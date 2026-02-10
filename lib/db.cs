@@ -28,7 +28,7 @@ public sealed class SupabaseService : ISupabaseService
             new SupabaseOptions
             {
                 AutoConnectRealtime = false,
-                AutoRefreshToken = true
+                AutoRefreshToken = false
             }
         );
     }

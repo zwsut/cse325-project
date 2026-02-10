@@ -3,22 +3,18 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 
 public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
 {
     private readonly ISupabaseService _supabaseService;
-    private readonly ILogger<SupabaseAuthStateProvider> _logger;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private bool _initialized;
 
     public SupabaseAuthStateProvider(
         ISupabaseService supabaseService,
-        ILogger<SupabaseAuthStateProvider> logger,
         IHttpContextAccessor httpContextAccessor)
     {
         _supabaseService = supabaseService;
-        _logger = logger;
         _httpContextAccessor = httpContextAccessor;
     }
 
@@ -35,7 +31,6 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
                 !string.IsNullOrWhiteSpace(accessToken) &&
                 !string.IsNullOrWhiteSpace(refreshToken))
             {
-                _logger.LogInformation("Restoring Supabase session from auth cookie.");
                 await _supabaseService.Client.Auth.SetSession(accessToken, refreshToken, true);
             }
 
@@ -43,12 +38,6 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
         }
 
         var session = _supabaseService.Client.Auth.CurrentSession;
-        _logger.LogInformation(
-            "Auth state check: session={HasSession} user={HasUser} currentUser={HasCurrentUser} accessLen={AccessLen}.",
-            session is not null,
-            session?.User is not null,
-            _supabaseService.Client.Auth.CurrentUser is not null,
-            session?.AccessToken?.Length ?? 0);
         if (session is null)
         {
             return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
@@ -78,7 +67,6 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
 
         if (claims.Count == 0)
         {
-            _logger.LogInformation("Auth state check: no claims resolved, returning anonymous.");
             return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
         }
 
@@ -89,67 +77,35 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
     public async Task SignInAsync(string email, string password)
     {
         await EnsureInitializedAsync();
-        _logger.LogInformation("Auth sign-in start for {Email}.", MaskEmail(email));
-        try
+        object? signInResult = await _supabaseService.Client.Auth.SignIn(email, password);
+        await EnsureSessionFromResultAsync(signInResult);
+
+        if (_supabaseService.Client.Auth.CurrentSession is null)
         {
-            object? signInResult = await _supabaseService.Client.Auth.SignIn(email, password);
-            _logger.LogInformation("Auth sign-in response type {Type}.", signInResult?.GetType().FullName ?? "null");
-
-            LogSessionState("after-signin");
-            var tokensFound = TryGetTokensFromResult(signInResult, out var accessToken, out var refreshToken);
-            _logger.LogInformation("Auth sign-in tokens in response: {TokensFound} (accessLen={AccessLen}, refreshLen={RefreshLen}).",
-                tokensFound, accessToken?.Length ?? 0, refreshToken?.Length ?? 0);
-
-            await EnsureSessionFromResultAsync(signInResult);
-            LogSessionState("after-ensure-session");
-
-            if (_supabaseService.Client.Auth.CurrentSession is null)
-            {
-                throw new InvalidOperationException("Sign-in did not return a session. If email confirmations are enabled, confirm the email before signing in.");
-            }
-
-            NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+            throw new InvalidOperationException("Sign-in did not return a session. If email confirmations are enabled, confirm the email before signing in.");
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Auth sign-in failed for {Email}.", MaskEmail(email));
-            throw;
-        }
+
+        NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
     }
 
     public async Task SignUpAsync(string email, string password)
     {
         await EnsureInitializedAsync();
-        _logger.LogInformation("Auth sign-up start for {Email}.", MaskEmail(email));
-        try
-        {
-            object? signUpResult = await _supabaseService.Client.Auth.SignUp(email, password);
-            _logger.LogInformation("Auth sign-up response type {Type}.", signUpResult?.GetType().FullName ?? "null");
-            LogSessionState("after-signup");
-            await EnsureSessionFromResultAsync(signUpResult);
-            LogSessionState("after-ensure-session");
-            NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Auth sign-up failed for {Email}.", MaskEmail(email));
-            throw;
-        }
+        object? signUpResult = await _supabaseService.Client.Auth.SignUp(email, password);
+        await EnsureSessionFromResultAsync(signUpResult);
+        NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
     }
 
     public async Task SignOutAsync()
     {
         await EnsureInitializedAsync();
-        _logger.LogInformation("Auth sign-out requested.");
         await _supabaseService.Client.Auth.SignOut();
-        LogSessionState("after-signout");
         NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
     }
 
     public async Task SendPasswordResetAsync(string email)
     {
         await EnsureInitializedAsync();
-        _logger.LogInformation("Auth password reset requested for {Email}.", MaskEmail(email));
         await _supabaseService.Client.Auth.ResetPasswordForEmail(email);
     }
 
@@ -173,12 +129,9 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
 
         if (!TryGetTokensFromResult(authResult, out var accessToken, out var refreshToken))
         {
-            _logger.LogInformation("Auth result did not contain tokens.");
             return;
         }
 
-        _logger.LogInformation("Setting auth session from tokens (accessLen={AccessLen}, refreshLen={RefreshLen}).",
-            accessToken?.Length ?? 0, refreshToken?.Length ?? 0);
         await _supabaseService.Client.Auth.SetSession(accessToken!, refreshToken!, true);
     }
 
@@ -211,33 +164,6 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
         return !string.IsNullOrWhiteSpace(accessToken) && !string.IsNullOrWhiteSpace(refreshToken);
     }
 
-    private void LogSessionState(string stage)
-    {
-        var session = _supabaseService.Client.Auth.CurrentSession;
-        var user = session?.User ?? _supabaseService.Client.Auth.CurrentUser;
-        _logger.LogInformation(
-            "Auth state {Stage}: session={HasSession} user={HasUser} accessLen={AccessLen}.",
-            stage,
-            session is not null,
-            user is not null,
-            session?.AccessToken?.Length ?? 0);
-    }
-
-    private static string MaskEmail(string email)
-    {
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            return "(empty)";
-        }
-
-        var at = email.IndexOf('@');
-        if (at <= 1)
-        {
-            return "***";
-        }
-
-        return $"{email[0]}***{email.Substring(at)}";
-    }
 
     private static (string? UserId, string? Email) TryGetClaimsFromJwt(string token)
     {

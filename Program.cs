@@ -54,7 +54,6 @@ app.UseAuthorization();
 app.MapPost("/auth/login", async (
     HttpContext httpContext,
     ISupabaseService supabaseService,
-    ILogger<Program> logger,
     IAntiforgery antiforgery) =>
 {
     try
@@ -63,7 +62,6 @@ app.MapPost("/auth/login", async (
     }
     catch (AntiforgeryValidationException ex)
     {
-        logger.LogWarning(ex, "Login POST failed antiforgery validation.");
         return Results.BadRequest("Invalid request.");
     }
 
@@ -71,9 +69,6 @@ app.MapPost("/auth/login", async (
     var email = form["email"].ToString();
     var password = form["password"].ToString();
     var returnUrl = SanitizeReturnUrl(form["returnUrl"].ToString());
-
-    logger.LogInformation("Login POST received for {Email}. ReturnUrl={ReturnUrl}. ResponseStarted={Started}.",
-        MaskEmail(email), returnUrl, httpContext.Response.HasStarted);
 
     if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
     {
@@ -84,11 +79,7 @@ app.MapPost("/auth/login", async (
     {
         await supabaseService.InitializeAsync();
         var result = await supabaseService.Client.Auth.SignIn(email, password);
-        logger.LogInformation("Supabase sign-in response type {Type}.", result?.GetType().FullName ?? "null");
-
         var (accessToken, refreshToken, userId, userEmail) = ExtractSessionTokens(result, supabaseService.Client.Auth.CurrentSession);
-        logger.LogInformation("Supabase sign-in tokens: accessLen={AccessLen} refreshLen={RefreshLen}.",
-            accessToken?.Length ?? 0, refreshToken?.Length ?? 0);
 
         if (string.IsNullOrWhiteSpace(accessToken) || string.IsNullOrWhiteSpace(refreshToken))
         {
@@ -109,12 +100,10 @@ app.MapPost("/auth/login", async (
             principal,
             new AuthenticationProperties { IsPersistent = true });
 
-        logger.LogInformation("Cookie sign-in completed. ResponseStarted={Started}.", httpContext.Response.HasStarted);
         return Results.Redirect(returnUrl);
     }
     catch (GotrueException gte)
     {
-        logger.LogWarning(gte, "Supabase sign-in failed.");
         var error = gte.Reason switch
         {
             FailureHint.Reason.UserEmailNotConfirmed => "confirm",
@@ -126,9 +115,8 @@ app.MapPost("/auth/login", async (
 
         return Results.Redirect($"/login?error={error}");
     }
-    catch (Exception ex)
+    catch (Exception)
     {
-        logger.LogWarning(ex, "Supabase sign-in failed.");
         return Results.Redirect("/login?error=unknown");
     }
 });
@@ -136,7 +124,6 @@ app.MapPost("/auth/login", async (
 app.MapPost("/auth/logout", async (
     HttpContext httpContext,
     ISupabaseService supabaseService,
-    ILogger<Program> logger,
     IAntiforgery antiforgery) =>
 {
     try
@@ -145,19 +132,16 @@ app.MapPost("/auth/logout", async (
     }
     catch (AntiforgeryValidationException ex)
     {
-        logger.LogWarning(ex, "Logout POST failed antiforgery validation.");
         return Results.BadRequest("Invalid request.");
     }
 
-    logger.LogInformation("Logout POST received. ResponseStarted={Started}.", httpContext.Response.HasStarted);
     try
     {
         await supabaseService.InitializeAsync();
         await supabaseService.Client.Auth.SignOut();
     }
-    catch (Exception ex)
+    catch (Exception)
     {
-        logger.LogWarning(ex, "Supabase sign-out failed.");
     }
 
     await httpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -178,22 +162,6 @@ static string SanitizeReturnUrl(string? returnUrl)
     }
 
     return Uri.TryCreate(returnUrl, UriKind.Relative, out _) ? returnUrl : "/";
-}
-
-static string MaskEmail(string email)
-{
-    if (string.IsNullOrWhiteSpace(email))
-    {
-        return "(empty)";
-    }
-
-    var at = email.IndexOf('@');
-    if (at <= 1)
-    {
-        return "***";
-    }
-
-    return $"{email[0]}***{email.Substring(at)}";
 }
 
 static (string? AccessToken, string? RefreshToken, string? UserId, string? Email) ExtractSessionTokens(object? result, Supabase.Gotrue.Session? currentSession)
