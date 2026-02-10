@@ -2,10 +2,12 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using System.ComponentModel.DataAnnotations
+@using Supabase.Gotrue.Exceptions
 @layout LoginLayout
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
 @attribute [AllowAnonymous]
+@rendermode InteractiveServer
 
 <div class="signup-container">
     <div class="signup-shell">
@@ -37,7 +39,7 @@
                 <p>Join KITS to start tracking your kitchen inventory</p>
             </div>
 
-            <EditForm EditContext="_editContext" OnSubmit="HandleSubmitAsync" class="signup-form" novalidate>
+            <EditForm EditContext="_editContext" OnSubmit="HandleSubmitAsync" FormName="signup" class="signup-form" novalidate>
                 <div class="form-row">
                     <div class="form-group @(HasError(nameof(SignupModel.FirstName)) ? "error" : "")">
                         <div class="input-wrapper">
@@ -60,17 +62,6 @@
                             @GetError(nameof(SignupModel.LastName))
                         </span>
                     </div>
-                </div>
-
-                <div class="form-group @(HasError(nameof(SignupModel.AccountName)) ? "error" : "")">
-                    <div class="input-wrapper">
-                        <input id="accountName" name="accountName" type="text" required @bind="_model.AccountName" />
-                        <label for="accountName">Family / Account Name</label>
-                        <span class="focus-border"></span>
-                    </div>
-                    <span class="error-message @(HasError(nameof(SignupModel.AccountName)) ? "show" : "")">
-                        @GetError(nameof(SignupModel.AccountName))
-                    </span>
                 </div>
 
                 <div class="form-group @(HasError(nameof(SignupModel.Email)) ? "error" : "")">
@@ -241,7 +232,7 @@
         }
         catch (Exception ex)
         {
-            errorMessage = ex.Message;
+            errorMessage = MapSignupError(ex);
         }
         finally
         {
@@ -273,6 +264,26 @@
     private bool HasError(string fieldName) => _errors.ContainsKey(fieldName);
     private string GetError(string fieldName) => _errors.TryGetValue(fieldName, out var msg) ? msg : string.Empty;
 
+    private static string MapSignupError(Exception ex)
+    {
+        if (ex is GotrueException gte)
+        {
+            return gte.Reason switch
+            {
+                FailureHint.Reason.UserAlreadyRegistered =>
+                    "An account with that email already exists. Try signing in or resetting your password.",
+                FailureHint.Reason.UserBadEmailAddress =>
+                    "That email address looks invalid. Try a different email address.",
+                FailureHint.Reason.UserTooManyRequests =>
+                    "Too many attempts. Please wait a moment and try again.",
+                _ =>
+                    "We couldn't create your account. Please check your details and try again."
+            };
+        }
+
+        return "We couldn't create your account. Please check your details and try again.";
+    }
+
     private sealed class SignupModel
     {
         [Required]
@@ -280,9 +291,6 @@
 
         [Required]
         public string LastName { get; set; } = string.Empty;
-
-        [Required]
-        public string AccountName { get; set; } = string.Empty;
 
         [Required, EmailAddress]
         public string Email { get; set; } = string.Empty;

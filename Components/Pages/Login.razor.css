@@ -166,6 +166,45 @@
     animation: shake 0.5s ease-in-out;
 }
 
+.form-error {
+    color: #ef4444;
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 12px;
+    text-align: center;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.form-action-link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #58c75d;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.form-action-link:hover {
+    color: white;
+}
+
+.form-info {
+    color: #bbf7d0;
+    font-size: 14px;
+    font-weight: 500;
+    margin-top: 10px;
+    text-align: center;
+}
+
 /* Button Styles */
 .btn {
     background: linear-gradient(135deg, #58c75d 0%, #27a137 100%);
@@ -196,7 +235,7 @@
 
 .btn:hover {
     /* transform: translateY(-2px); */
-    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.6);
+    /* box-shadow: 0 8px 25px rgba(99, 102, 241, 0.6); */
 }
 
 .btn:hover::before {
@@ -368,7 +407,7 @@
     overflow: hidden;
 }
 
-.login-card::before {
+/* .login-card::before {
     content: '';
     position: absolute;
     top: 0;
@@ -377,7 +416,7 @@
     height: 2px;
     background: linear-gradient(90deg, transparent, #58c75d, transparent);
     transition: left 0.5s ease;
-}
+} */
 
 .login-card:hover::before {
     left: 100%;
