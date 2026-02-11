@@ -1,4 +1,11 @@
 ﻿@inherits LayoutComponentBase
+@using Supabase.Postgrest.Attributes
+@using Supabase.Postgrest.Models
+@using System.Security.Claims
+@inject ISupabaseService SupabaseService
+@inject AuthenticationStateProvider AuthStateProvider
+
+
 
 <div class="app-shell">
     <aside class="sidebar">
@@ -11,12 +18,16 @@
                 <button class="icon-btn" type="button" title="Menu" aria-label="Menu">
                     <span class="hamburger"></span>
                 </button>
-                <span class="topbar-title">The Smith Home</span>
+                <span class="topbar-title">@_groupName</span>
             </div>
 
             <div class="topbar-right">
-                <span class="user-name">John Smith</span>
-                <div class="avatar" title="John Smith" aria-label="John Smith">JS</div>
+                <span class="user-name">@_displayName</span>
+                <div class="avatar" title="@_displayName" aria-label="@_displayName">@_avatarText</div>
+                <form method="post" action="/auth/logout" class="logout-form">
+                    <AntiforgeryToken />
+                    <button type="submit" class="logout-btn">Log out</button>
+                </form>
             </div>
         </header>
 
@@ -31,3 +42,145 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+
+    private string _groupName = "KITS";
+    private string _displayName = "User";
+    private string _avatarText = "U";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+        await SupabaseService.InitializeAsync();
+
+        var user = await LoadUserAsync(userIdClaim, email);
+        if (user is not null)
+        {
+            _displayName = user.DisplayName ?? user.Email ?? _displayName;
+            _avatarText = BuildInitials(_displayName);
+        }
+        else if (!string.IsNullOrWhiteSpace(email))
+        {
+            _displayName = email;
+            _avatarText = BuildInitials(_displayName);
+        }
+
+        var groupName = await LoadGroupNameAsync(user?.UserId);
+        if (!string.IsNullOrWhiteSpace(groupName))
+        {
+            _groupName = groupName;
+        }
+        else
+        {
+            _groupName = _displayName + "'s Household";
+        }
+    }
+
+    private async Task<AppUser?> LoadUserAsync(string? userIdClaim, string? email)
+    {
+        if (!string.IsNullOrWhiteSpace(userIdClaim) && Guid.TryParse(userIdClaim, out var id))
+        {
+            var response = await SupabaseService.Client
+                .From<AppUser>()
+                .Where(u => u.UserId == id)
+                .Limit(1)
+                .Get();
+            return response.Models?.FirstOrDefault();
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            var response = await SupabaseService.Client
+                .From<AppUser>()
+                .Where(u => u.Email == email)
+                .Limit(1)
+                .Get();
+            return response.Models?.FirstOrDefault();
+        }
+
+        return null;
+    }
+
+    private async Task<string?> LoadGroupNameAsync(Guid? userId)
+    {
+        if (userId is null)
+        {
+            return null;
+        }
+
+        var memberResponse = await SupabaseService.Client
+            .From<GroupMember>()
+            .Where(m => m.UserId == userId.Value)
+            .Limit(1)
+            .Get();
+
+        var membership = memberResponse.Models?.FirstOrDefault();
+        if (membership is null)
+        {
+            return null;
+        }
+
+        var groupResponse = await SupabaseService.Client
+            .From<Group>()
+            .Where(g => g.GroupId == membership.GroupId)
+            .Limit(1)
+            .Get();
+
+        return groupResponse.Models?.FirstOrDefault()?.Name;
+    }
+
+    private static string BuildInitials(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "U";
+        }
+
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 1)
+        {
+            return parts[0].Length >= 2 ? parts[0].Substring(0, 2).ToUpperInvariant() : parts[0].ToUpperInvariant();
+        }
+
+        var first = parts[0][0];
+        var last = parts[^1][0];
+        return $"{char.ToUpperInvariant(first)}{char.ToUpperInvariant(last)}";
+    }
+
+    [Table("users")]
+    public class AppUser : BaseModel
+    {
+        [PrimaryKey("user_id", false)]
+        public Guid UserId { get; set; }
+
+        [Column("email")]
+        public string? Email { get; set; }
+
+        [Column("display_name")]
+        public string? DisplayName { get; set; }
+    }
+
+    [Table("group_members")]
+    public class GroupMember : BaseModel
+    {
+        [Column("group_id")]
+        public Guid GroupId { get; set; }
+
+        [Column("user_id")]
+        public Guid UserId { get; set; }
+    }
+
+    [Table("groups")]
+    public class Group : BaseModel
+    {
+        [PrimaryKey("group_id", false)]
+        public Guid GroupId { get; set; }
+
+        [Column("name")]
+        public string? Name { get; set; }
+    }
+}

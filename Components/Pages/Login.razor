@@ -1,0 +1,288 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using System.ComponentModel.DataAnnotations
+@using Supabase.Gotrue.Exceptions
+@layout LoginLayout
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+
+<div class="login-container">
+    <div class="login-shell">
+        <div class="welcome-panel">
+            <div class="welcome-visual" aria-hidden="true">
+                <svg class="welcome-illustration" viewBox="0 0 220 200" role="img">
+                    <defs>
+                        <linearGradient id="kitGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#a7f3d0" />
+                            <stop offset="100%" stop-color="#22c55e" />
+                        </linearGradient>
+                    </defs>
+                    <rect x="10" y="20" width="200" height="140" rx="18" fill="rgba(255,255,255,0.15)" />
+                    <rect x="30" y="40" width="160" height="20" rx="10" fill="url(#kitGrad)" />
+                    <rect x="30" y="70" width="120" height="16" rx="8" fill="rgba(255,255,255,0.6)" />
+                    <rect x="30" y="95" width="140" height="14" rx="7" fill="rgba(255,255,255,0.45)" />
+                    <rect x="30" y="118" width="90" height="12" rx="6" fill="rgba(255,255,255,0.35)" />
+                    <circle cx="170" cy="115" r="24" fill="url(#kitGrad)" opacity="0.9" />
+                </svg>
+            </div>
+            <h1 class="welcome-title">Welcome to KITS</h1>
+            <p class="welcome-subtitle">Kitchen Inventory Tracking System</p>
+            <p class="welcome-tagline">Sign in to keep your kitchen organized and up to date.</p>
+        </div>
+
+        <div class="login-card">
+            <div class="login-header">
+                <h2>Sign In</h2>
+                <p>Access your inventory dashboard</p>
+            </div>
+
+            <form method="post" action="/auth/login" class="login-form" novalidate>
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@_returnUrl" />
+                <div class="form-group">
+                    <div class="input-wrapper">
+                        <input id="email"
+                               name="email"
+                               type="email"
+                               required
+                               autocomplete="email"
+                               @bind="_model.Email" />
+                        <label for="email">Email Address</label>
+                        <span class="focus-border"></span>
+                    </div>
+                    <span class="error-message"></span>
+                </div>
+
+                <div class="form-group">
+                    <div class="input-wrapper password-wrapper">
+                        @if (passwordVisible)
+                        {
+                            <input id="password"
+                                   name="password"
+                                   type="text"
+                                   required
+                                   autocomplete="current-password"
+                                   @bind="_model.Password"
+                                   @key="passwordVisible" />
+                        }
+                        else
+                        {
+                            <input id="password"
+                                   name="password"
+                                   type="password"
+                                   required
+                                   autocomplete="current-password"
+                                   @bind="_model.Password"
+                                   @key="passwordVisible" />
+                        }
+                        <label for="password">Password</label>
+                        <button type="button"
+                                class="password-toggle"
+                                aria-label="Toggle password visibility"
+                                @onclick="TogglePassword"
+                                @onclick:preventDefault="true">
+                            <span class="eye-icon @(passwordVisible ? "show-password" : "")"></span>
+                        </button>
+                        <span class="focus-border"></span>
+                    </div>
+                    <span class="error-message"></span>
+                </div>
+
+                <div class="form-options">
+                    <label class="remember-wrapper">
+                        <input id="remember" name="remember" type="checkbox" @bind="_model.RememberMe" />
+                        <span class="checkbox-label">
+                            <span class="checkmark"></span>
+                            Remember me
+                        </span>
+                    </label>
+                    <a href="#" class="forgot-password" @onclick="HandleResetPasswordAsync" @onclick:preventDefault="true">Forgot password?</a>
+                </div>
+
+                <button type="submit" class="login-btn btn">
+                    <span class="btn-text">Sign In</span>
+                    <span class="btn-loader"></span>
+                </button>
+            </form>
+
+            <div class="divider">
+                <span>or continue with</span>
+            </div>
+
+            <div class="social-login">
+                <button type="button" class="social-btn google-btn">
+                    <span class="social-icon google-icon"></span>
+                    Google
+                </button>
+                <button type="button" class="social-btn github-btn">
+                    <span class="social-icon github-icon"></span>
+                    GitHub
+                </button>
+            </div>
+
+            <div class="signup-link">
+                <p>Don't have an account? <a href="/signup">Sign up</a></p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="form-error">@errorMessage</div>
+            }
+            @if (showAuthOptions)
+            {
+                <div class="form-actions">
+                    <a class="form-action-link" href="/signup">Create an account</a>
+                    <button type="button" class="form-action-link" @onclick="HandleResetPasswordAsync">Reset password</button>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(infoMessage))
+            {
+                <div class="form-info">@infoMessage</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly LoginModel _model = new();
+    private string? errorMessage;
+    private string? infoMessage;
+    private bool showAuthOptions;
+    private bool passwordVisible;
+    private string _returnUrl = "/";
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+        var returnUrl = query.Get("returnUrl");
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Uri.TryCreate(returnUrl, UriKind.Relative, out _))
+        {
+            _returnUrl = returnUrl;
+        }
+
+        var error = query.Get("error");
+        errorMessage = error switch
+        {
+            "missing" => "Please enter your email and password.",
+            "invalid" => "We couldn't sign you in. Please check your email and password and try again.",
+            "confirm" => "Please confirm your email before signing in.",
+            "rate" => "Too many attempts. Please wait a moment and try again.",
+            "unknown" => "We couldn't sign you in. Please try again.",
+            _ => null
+        };
+    }
+
+    private void TogglePassword()
+    {
+        passwordVisible = !passwordVisible;
+    }
+
+    private async Task HandleResetPasswordAsync()
+    {
+        infoMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_model.Email))
+        {
+            errorMessage = "Enter your email above so we can send a reset link.";
+            showAuthOptions = true;
+            return;
+        }
+
+        if (AuthStateProvider is not SupabaseAuthStateProvider supabaseAuth)
+        {
+            errorMessage = "Auth provider is not configured.";
+            showAuthOptions = false;
+            return;
+        }
+
+        try
+        {
+            await supabaseAuth.SendPasswordResetAsync(_model.Email);
+            errorMessage = null;
+            infoMessage = "If an account exists for that email, we'll send a reset link shortly.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = MapResetError(ex);
+        }
+    }
+
+    private string? GetReturnUrl()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (string.IsNullOrWhiteSpace(uri.Query))
+        {
+            return null;
+        }
+
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var returnUrl = query.Get("returnUrl");
+        if (string.IsNullOrWhiteSpace(returnUrl))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(returnUrl, UriKind.Relative, out _) ? returnUrl : null;
+    }
+
+    private static (string Message, bool ShowAuthOptions) MapAuthError(Exception ex)
+    {
+        if (ex is InvalidOperationException)
+        {
+            return (ex.Message, false);
+        }
+
+        if (ex is GotrueException gte)
+        {
+            return gte.Reason switch
+            {
+                FailureHint.Reason.UserEmailNotConfirmed =>
+                    ("Please confirm your email before signing in. Check your inbox for a confirmation email.", false),
+                FailureHint.Reason.UserTooManyRequests =>
+                    ("Too many attempts. Please wait a moment and try again.", false),
+                FailureHint.Reason.UserBadEmailAddress =>
+                    ("That email address looks invalid. Please check it and try again.", false),
+                FailureHint.Reason.UserBadMultiple or FailureHint.Reason.UserBadLogin or FailureHint.Reason.UserBadPassword =>
+                    ("We couldn't sign you in with that email and password. You can create an account or reset your password.", true),
+                _ =>
+                    ("We couldn't sign you in. Please check your email and password and try again.", false)
+            };
+        }
+
+        return ("We couldn't sign you in. Please check your email and password and try again.", false);
+    }
+
+    private static string MapResetError(Exception ex)
+    {
+        if (ex is GotrueException gte)
+        {
+            return gte.Reason switch
+            {
+                FailureHint.Reason.UserBadEmailAddress =>
+                    "That email address looks invalid. Please check it and try again.",
+                FailureHint.Reason.UserTooManyRequests =>
+                    "Too many reset attempts. Please wait a moment and try again.",
+                _ =>
+                    "We couldn't send a reset link. Please try again."
+            };
+        }
+
+        return "We couldn't send a reset link. Please try again.";
+    }
+
+    private sealed class LoginModel
+    {
+        [Required, EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required, MinLength(6)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+}
