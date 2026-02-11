@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Supabase.Gotrue.Exceptions;
+using cse325_project.Services;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +35,10 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     });
 builder.Services.AddHttpContextAccessor();
+
+// Keep Inventory Service too
+builder.Services.AddSingleton<InventoryService>();
+
 
 
 var app = builder.Build();
@@ -181,3 +187,4 @@ static (string? AccessToken, string? RefreshToken, string? UserId, string? Email
     var user = session.User;
     return (session.AccessToken, session.RefreshToken, user?.Id, user?.Email);
 }
+

@@ -26,12 +26,34 @@ html, body {
 .sidebar a:visited,
 .sidebar a:hover,
 .sidebar a:active {
-    color: rgba(255,255,255,0.92) !important;
-    text-decoration: none !important;
+    color: rgba(255,255,255,0.92);
+    text-decoration: none;
+}
+
+.menu .menu-item{
+    &:hover{
+        background-color: #19a85f;
+        border: 1px solid #19a85f;
+        border-radius: 10px;
+        padding-left: 5px;
+        transform: translate(1px, 0px);
+        transition: .3s;
+
+    }
+}
+
+.primary-action {
+    padding: 10px;
+    background-color: #19a85f;
+    border-radius: 10px;
+}
+
+.primary-action:hover {
+    opacity: .8;
 }
 
 .sidebar a:hover {
-    color: #ffffff !important;
+    color: #ffffff ;
 }
 
 /* Optional: nicer focus ring for keyboard users */
