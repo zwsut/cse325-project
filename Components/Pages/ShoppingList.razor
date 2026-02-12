@@ -1,6 +1,287 @@
-@page "/shopping-list"
+@page "/ShoppingList"
+@using System.Security.Claims
+@using cse325_project.Models
+@using cse325_project.Services
+@inject ShoppingListService Shopping
+@inject IHttpContextAccessor HttpContextAccessor
 
 <PageTitle>Shopping List</PageTitle>
 
-<h1 class="simple-title">Shopping List</h1>
-<p class="simple-muted">(Placeholder page) Add your shopping-list UI here next.</p>
+<div class="page-head">
+    <h1 class="page-title">Shopping</h1>
+</div>
+
+<section class="inv-section">
+    <div class="section-head">
+        <h2>@(listName ?? "Weekly Shopping")</h2>
+        <button class="btn-add" type="button" @onclick="() => showAdd = !showAdd">
+            @(showAdd ? "Close" : "Add Item")
+        </button>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <p style="color:#b42318;font-weight:800;">@error</p>
+    }
+
+    @if (showAdd)
+    {
+        <div class="table-wrap" style="padding:14px; margin-bottom:16px;">
+            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+                <div style="min-width:260px;">
+                    <label style="font-weight:900;">Catalog item</label>
+                    <select @bind="selectedCatalogId" style="width:100%; padding:10px; border-radius:10px;">
+                        <option value="">-- select --</option>
+                        @foreach (var kv in catalogMap.OrderBy(k => k.Value.Name))
+                        {
+                            <option value="@kv.Key">
+                                @kv.Value.Name @(string.IsNullOrWhiteSpace(kv.Value.Brand) ? "" : $"({kv.Value.Brand})")
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <div style="width:120px;">
+                    <label style="font-weight:900;">Qty</label>
+                    <input type="number" step="0.001" @bind="addQty" style="width:100%; padding:10px; border-radius:10px;" />
+                </div>
+
+                <div style="width:160px;">
+                    <label style="font-weight:900;">Unit</label>
+                    <input @bind="addUnit" style="width:100%; padding:10px; border-radius:10px;" />
+                </div>
+
+                <button class="btn-add" type="button" @onclick="AddFromCatalog" disabled="@(!Guid.TryParse(selectedCatalogId, out _))">
+                    Add
+                </button>
+            </div>
+
+            <hr style="opacity:.25; margin:14px 0;" />
+
+            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
+                <div style="min-width:260px; flex:1;">
+                    <label style="font-weight:900;">Custom item</label>
+                    <input @bind="customName" placeholder="e.g. Pickles" style="width:100%; padding:10px; border-radius:10px;" />
+                </div>
+
+                <div style="width:120px;">
+                    <label style="font-weight:900;">Qty</label>
+                    <input type="number" step="0.001" @bind="addQty" style="width:100%; padding:10px; border-radius:10px;" />
+                </div>
+
+                <div style="width:160px;">
+                    <label style="font-weight:900;">Unit</label>
+                    <input @bind="addUnit" style="width:100%; padding:10px; border-radius:10px;" />
+                </div>
+
+                <button class="btn-add" type="button" @onclick="AddCustom" disabled="@string.IsNullOrWhiteSpace(customName)">
+                    Add
+                </button>
+            </div>
+        </div>
+    }
+
+    <div class="table-wrap">
+        <table class="inv-table">
+            <thead>
+                <tr>
+                    <th style="width:80px;">Done</th>
+                    <th>Item Name</th>
+                    <th style="width:140px;">Amount</th>
+                    <th style="width:160px;">Unit</th>
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (isLoading)
+                {
+                    <tr><td colspan="5" style="padding:16px;">Loading…</td></tr>
+                }
+                else if (items.Count == 0)
+                {
+                    <tr><td colspan="5" style="padding:16px;">No items yet.</td></tr>
+                }
+                else
+                {
+                    @foreach (var row in items)
+                    {
+                        <tr>
+                            <td>
+                                <input type="checkbox" checked="@row.IsChecked" @onchange="async _ => await Toggle(row)" />
+                            </td>
+
+                            <td class="desc">
+                                <span style="font-weight:900; @(row.IsChecked ? "text-decoration:line-through;opacity:.7;" : "")">
+                                    @GetItemName(row)
+                                </span>
+                            </td>
+
+                            <td>
+                                <input type="number" step="0.001"
+                                       value="@row.Quantity"
+                                       @onchange="async e => await UpdateQty(row, e.Value?.ToString())"
+                                       style="width:100%; padding:8px; border-radius:10px;" />
+                            </td>
+
+                            <td>
+                                <input value="@row.Unit"
+                                       @onchange="async e => await UpdateUnit(row, e.Value?.ToString())"
+                                       style="width:100%; padding:8px; border-radius:10px;" />
+                            </td>
+
+                            <td class="actions">
+                                <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete"
+                                        @onclick="async () => await Remove(row)">
+                                    🗑
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    bool isLoading = true;
+    bool showAdd = false;
+    string? error;
+
+    Guid? groupId;
+    Guid? listId;
+    string? listName;
+
+    List<ListItemRow> items = new();
+    Dictionary<Guid, ItemCatalogRow> catalogMap = new();
+
+    string? selectedCatalogId;
+    decimal addQty = 1;
+    string? addUnit;
+    string? customName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    Guid? GetUserId()
+    {
+        var httpUser = HttpContextAccessor.HttpContext?.User;
+        var id = httpUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(id, out var g) ? g : null;
+    }
+
+    async Task LoadAsync()
+    {
+        try
+        {
+            isLoading = true;
+            error = null;
+
+            var userId = GetUserId();
+            if (userId is null)
+            {
+                error = "You must be logged in.";
+                return;
+            }
+
+            groupId = await Shopping.GetUserGroupIdAsync(userId.Value);
+            if (groupId is null)
+            {
+                error = "No group found for your user yet. Make sure signup/login init creates one group + membership.";
+                return;
+            }
+
+            var list = await Shopping.GetOrCreateShoppingListAsync(groupId.Value, userId.Value);
+            if (list is null)
+            {
+                error = "Could not load/create shopping list.";
+                return;
+            }
+
+            listId = list.ListId;
+            listName = list.Name;
+
+            catalogMap = await Shopping.GetCatalogMapAsync();
+            items = await Shopping.GetItemsAsync(listId.Value);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    string GetItemName(ListItemRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.CustomName)) return row.CustomName!;
+        if (row.ItemId is Guid id && catalogMap.TryGetValue(id, out var cat)) return cat.Name;
+        return "(unknown)";
+    }
+
+    async Task AddFromCatalog()
+    {
+        if (listId is null) return;
+        var userId = GetUserId();
+        if (userId is null) return;
+        if (!Guid.TryParse(selectedCatalogId, out var itemId)) return;
+
+        // If unit left blank, use default unit from catalog if available
+        var unit = string.IsNullOrWhiteSpace(addUnit) && catalogMap.TryGetValue(itemId, out var cat)
+            ? cat.DefaultUnit
+            : addUnit;
+
+        await Shopping.AddCatalogAsync(listId.Value, userId.Value, itemId, addQty, unit);
+        items = await Shopping.GetItemsAsync(listId.Value);
+
+        selectedCatalogId = null;
+        customName = null;
+        addQty = 1;
+        addUnit = null;
+    }
+
+    async Task AddCustom()
+    {
+        if (listId is null) return;
+        var userId = GetUserId();
+        if (userId is null) return;
+        if (string.IsNullOrWhiteSpace(customName)) return;
+
+        await Shopping.AddCustomAsync(listId.Value, userId.Value, customName, addQty, addUnit);
+        items = await Shopping.GetItemsAsync(listId.Value);
+
+        selectedCatalogId = null;
+        customName = null;
+        addQty = 1;
+        addUnit = null;
+    }
+
+    async Task Toggle(ListItemRow row)
+    {
+        await Shopping.ToggleCheckedAsync(row);
+        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+    }
+
+    async Task UpdateQty(ListItemRow row, string? raw)
+    {
+        if (!decimal.TryParse(raw, out var qty)) qty = row.Quantity;
+        await Shopping.UpdateQtyUnitAsync(row, qty, row.Unit);
+        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+    }
+
+    async Task UpdateUnit(ListItemRow row, string? unit)
+    {
+        await Shopping.UpdateQtyUnitAsync(row, row.Quantity, unit);
+        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+    }
+
+    async Task Remove(ListItemRow row)
+    {
+        await Shopping.DeleteAsync(row);
+        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+    }
+}

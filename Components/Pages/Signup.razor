@@ -6,6 +6,8 @@
 @layout LoginLayout
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject SupabaseAuthStateProvider supabaseAuth
+
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
@@ -227,12 +229,20 @@
         isSubmitting = true;
         try
         {
-            await supabaseAuth.SignUpAsync(_model.Email, _model.Password);
+            var displayName = $"{_model.FirstName} {_model.LastName}".Trim();
+
+            await supabaseAuth.SignUpAsync(
+                _model.Email,
+                _model.Password,
+                displayName
+            );
+
             successMessage = "Account created. Please check your email to confirm, then sign in.";
         }
         catch (Exception ex)
         {
-            errorMessage = MapSignupError(ex);
+            @* errorMessage = MapSignupError(ex); *@
+            errorMessage = ex.Message;
         }
         finally
         {
