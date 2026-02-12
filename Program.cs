@@ -24,6 +24,9 @@ var supabaseSettings = builder.Configuration
 builder.Services.AddSingleton(supabaseSettings);
 builder.Services.AddScoped<ISupabaseService, SupabaseService>();
 builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthStateProvider>();
+builder.Services.AddScoped<SupabaseAuthStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<SupabaseAuthStateProvider>());
+builder.Services.AddScoped<ShoppingListService>();
 builder.Services.AddAuthorization();
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
