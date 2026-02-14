@@ -84,3 +84,38 @@ textarea.input {
 	.btn-danger { margin-left: 0; }
 }
 
+/* locations table */
+.locations-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 24px auto 0;
+}
+.locations-table th,
+.locations-table td {
+    padding: 8px 12px;
+    border: 1px solid rgba(0,0,0,0.1);
+    text-align: left;
+}
+.locations-table tr:hover {
+    background: rgba(12, 87, 57, 0.06);
+}
+.locations-table th {
+    background: rgba(12, 87, 57, 0.1);
+    color: var(--accent, #0c5739);
+    font-weight: 600;
+}
+.locations-table button {
+    background: transparent;
+    border: none;
+    color: var(--accent, #0c5739);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+.locations-table button.btn-link-danger {
+    color: #ff4d4f;
+}
+.locations-table button:hover {
+    background: rgba(12, 87, 57, 0.1);
+}
+
