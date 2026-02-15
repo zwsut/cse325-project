@@ -1,5 +1,5 @@
 using cse325_project.Models;
-
+using cse325_project.Models.Database;
 namespace cse325_project.Services;
 
 public class ShoppingListService
@@ -22,13 +22,13 @@ public class ShoppingListService
     {
         await _supabase.InitializeAsync();
 
-        var lists = await _supabase.Client.From<ListRow>()
+        var existingRes = await _supabase.Client.From<ListRow>()
             .Where(l => l.GroupId == groupId)
+            .Where(l => l.ListType == "shopping")
+            .Limit(1)
             .Get();
 
-        var existing = lists.Models.FirstOrDefault(l =>
-            string.Equals(l.ListType, "shopping", StringComparison.OrdinalIgnoreCase));
-
+        var existing = existingRes.Models.FirstOrDefault();
         if (existing is not null) return existing;
 
         var inserted = await _supabase.Client.From<ListRow>().Insert(new ListRow
@@ -41,6 +41,7 @@ public class ShoppingListService
 
         return inserted.Models.FirstOrDefault();
     }
+
 
     public async Task<List<ListItemRow>> GetItemsAsync(Guid listId)
     {

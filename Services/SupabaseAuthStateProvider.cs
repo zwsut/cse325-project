@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Http;
 using cse325_project.Models;
+using cse325_project.Models.Database;
 
 public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
 {

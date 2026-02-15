@@ -38,10 +38,10 @@ public class Group : BaseModel
 [Table("group_members")]
 public class GroupMember : BaseModel
 {
-    [Column("group_id")]
+    [PrimaryKey("group_id")]
     public Guid GroupId { get; set; }
 
-    [Column("user_id")]
+    [PrimaryKey("user_id")]
     public Guid UserId { get; set; }
 
     [Column("role")]
@@ -50,6 +50,7 @@ public class GroupMember : BaseModel
     [Column("joined_at")]
     public DateTime JoinedAt { get; set; }
 }
+
 
 [Table("pantries")]
 public class Pantry : BaseModel
@@ -115,7 +116,8 @@ public class CatalogItem : BaseModel
     public Guid ItemId { get; set; }
 
     [Column("name")]
-    public string? Name { get; set; }
+    public string Name { get; set; } = string.Empty;
+
 
     [Column("brand")]
     public string? Brand { get; set; }
@@ -155,15 +157,16 @@ public class ItemTag : BaseModel
 [Table("item_catalog_tags")]
 public class CatalogItemTag : BaseModel
 {
-    [Column("item_id")]
+    [PrimaryKey("item_id")]
     public Guid ItemId { get; set; }
 
-    [Column("tag_id")]
+    [PrimaryKey("tag_id")]
     public Guid TagId { get; set; }
 }
 
+
 [Table("inventory_items")]
-public class InventoryItemEntity : BaseModel
+public class InventoryItem : BaseModel
 {
     [PrimaryKey("inventory_id")]
     public Guid InventoryId { get; set; }
@@ -184,10 +187,10 @@ public class InventoryItemEntity : BaseModel
     public decimal Quantity { get; set; }
 
     [Column("unit")]
-    public string? Unit { get; set; }
+    public string Unit { get; set; } = string.Empty;
 
     [Column("expires_on")]
-    public DateTime? ExpiresOn { get; set; }
+    public DateOnly? ExpiresOn { get; set; }  // was DateTime?
 
     [Column("notes")]
     public string? Notes { get; set; }
@@ -201,6 +204,7 @@ public class InventoryItemEntity : BaseModel
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; }
 }
+
 
 [Table("lists")]
 public class AppList : BaseModel

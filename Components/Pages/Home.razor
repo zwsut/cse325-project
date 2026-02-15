@@ -1,120 +1,228 @@
-﻿@using Microsoft.AspNetCore.Authorization
-@page "/"
+﻿@page "/"
+@using System.Security.Claims
+@using cse325_project.Models.Database
+@using cse325_project.Services
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>All Inventory</PageTitle>
 
-<div class="page-head">
-    <h1 class="page-title">Kitchen</h1>
-</div>
+@if (_loading)
+{
+    <p>Loading inventory...</p>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="simple-muted">Error: @_error</p>
+}
+else if (_pantrySections.Count == 0)
+{
+    <p class="simple-muted">No inventory yet. Add a pantry/location and then add items.</p>
+    <a class="btn-add" href="/inventory/edit">Edit Locations</a>
+}
+else
+{
+    @foreach (var pantry in _pantrySections)
+    {
+        <div class="page-head">
+            <h1 class="page-title">@pantry.PantryName</h1>
+        </div>
 
-<section class="inv-section">
-    <div class="section-head">
-        <h2>Pantry</h2>
-        <a class="btn-add" href="/items/new">Add Item</a>
-    </div>
+        <section class="inv-section">
+            <div class="section-head">
+                <h2>All Items</h2>
+                <a class="btn-add" href="/items/new">Add Item</a>
+            </div>
 
-    <div class="table-wrap">
-        <table class="inv-table">
-            <thead>
-                <tr>
-                    <th class="col-id">ID</th>
-                    <th>Item Name</th>
-                    <th>Amount</th>
-                    <th>Category</th>
-                    <th>Description</th>
-                    <th class="col-actions">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in PantryItems)
-                {
-                    <tr>
-                        <td class="id">@item.Id</td>
-                        <td>@item.Name</td>
-                        <td>@item.Amount</td>
-                        <td>@item.Category</td>
-                        <td class="desc">@item.Description</td>
-                        <td class="actions">
-                            <a class="icon-btn" href="/inventory/pantry" title="Edit" aria-label="Edit">
-                                ✎
-                            </a>
-                            <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">
-                                🗑
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-</section>
+            <div class="table-wrap">
+                <table class="inv-table">
+                    <thead>
+                        <tr>
+                            <th class="col-id">ID</th>
+                            <th>Item Name</th>
+                            <th>Amount</th>
+                            <th>Container</th>
+                            <th>Description</th>
+                            <th class="col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (pantry.Items.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="6" class="desc">No items in this pantry yet.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in pantry.Items)
+                            {
+                                <tr>
+                                    <td class="id">@item.Id</td>
+                                    <td>@item.Name</td>
+                                    <td>@item.Amount</td>
+                                    <td>@item.Container</td>
+                                    <td class="desc">@item.Description</td>
+                                    <td class="actions">
+                                        @* later: hook edit/delete *@
+                                        <a class="icon-btn" href="@item.EditHref" title="View" aria-label="View">✎</a>
+                                        <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">🗑</button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
 
-<div class="spacer"></div>
-
-<div class="page-head">
-    <h1 class="page-title">Garage</h1>
-</div>
-
-<section class="inv-section">
-    <div class="section-head">
-        <h2>Food Storage</h2>
-        <a class="btn-add" href="/items/new">Add Item</a>
-    </div>
-
-    <div class="table-wrap">
-        <table class="inv-table">
-            <thead>
-                <tr>
-                    <th class="col-id">ID</th>
-                    <th>Item Name</th>
-                    <th>Amount</th>
-                    <th>Category</th>
-                    <th>Description</th>
-                    <th class="col-actions">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var item in FoodStorageItems)
-                {
-                    <tr>
-                        <td class="id">@item.Id</td>
-                        <td>@item.Name</td>
-                        <td>@item.Amount</td>
-                        <td>@item.Category</td>
-                        <td class="desc">@item.Description</td>
-                        <td class="actions">
-                            <a class="icon-btn" href="/inventory/food-storage" title="Edit" aria-label="Edit">
-                                ✎
-                            </a>
-                            <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">
-                                🗑
-                            </button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-</section>
+        <div class="spacer"></div>
+    }
+}
 
 @code {
-    private IReadOnlyList<InventoryDisplayItem> PantryItems { get; } = new List<InventoryDisplayItem>
-    {
-        new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
-        new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
-        new("006", "Chicken Noodle", "5 cans", "Soup", "Lorem ipsum dolor sit amet consectetur."),
-        new("023", "Fruity Pebbles", "2 Boxes", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
-        new("027", "Flour", "5 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
-        new("032", "Sugar", "4 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
-        new("056", "Sprite", "2 liters", "Drink", "Lorem ipsum dolor sit amet consectetur."),
-        new("063", "Mini-Muffins", "1 box", "Treat", "Lorem ipsum dolor sit amet consectetur."),
-    };
+    private bool _loading = true;
+    private string? _error;
 
-    private IReadOnlyList<InventoryDisplayItem> FoodStorageItems { get; } = new List<InventoryDisplayItem>
+    private List<PantrySectionVm> _pantrySections = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
-        new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),
-        new("103", "Olive Oil", "1 bottle", "Cooking", "Lorem ipsum dolor sit amet consectetur."),
-        new("104", "Pasta", "6 boxes", "Grain", "Lorem ipsum dolor sit amet consectetur."),
-    };
+        try
+        {
+            await SupabaseService.InitializeAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+            var (user, group) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
+            if (user is null || group is null)
+            {
+                _error = "You must be logged in.";
+                return;
+            }
+
+            // 1) pantries for this user's group
+            var pantryRes = await SupabaseService.Client
+                .From<Pantry>()
+                .Where(p => p.GroupId == group.GroupId)
+                .Get();
+
+            var pantries = (pantryRes.Models ?? new List<Pantry>())
+                .OrderBy(p => p.Name)
+                .ToList();
+
+            if (pantries.Count == 0)
+            {
+                _pantrySections = new();
+                return;
+            }
+
+            // 2) preload locations for each pantry (map location_id -> name + slug)
+            var locationMap = new Dictionary<Guid, (string Name, string Slug, Guid PantryId)>();
+            foreach (var pantry in pantries)
+            {
+                var locRes = await SupabaseService.Client
+                    .From<PantryLocation>()
+                    .Where(l => l.PantryId == pantry.PantryId)
+                    .Get();
+
+                foreach (var loc in (locRes.Models ?? new List<PantryLocation>()))
+                {
+                    if (loc.LocationId == Guid.Empty) continue;
+                    var name = loc.Name ?? "Unnamed";
+                    locationMap[loc.LocationId] = (name, ToSlug(name), pantry.PantryId);
+                }
+            }
+
+            // 3) load inventory items per pantry, map catalog names
+            // (simple approach: get catalog once)
+            var catalogRes = await SupabaseService.Client.From<CatalogItem>().Get();
+            var catalog = (catalogRes.Models ?? new List<CatalogItem>())
+                .ToDictionary(c => c.ItemId, c => c);
+
+            var sections = new List<PantrySectionVm>();
+
+            foreach (var pantry in pantries)
+            {
+                var invRes = await SupabaseService.Client
+                    .From<InventoryItem>()
+                    .Where(i => i.PantryId == pantry.PantryId)
+                    .Get();
+
+                var inv = invRes.Models ?? new List<InventoryItem>();
+
+                var items = inv
+                    .OrderByDescending(i => i.UpdatedAt)
+                    .Select(i =>
+                    {
+                        var displayName =
+                            i.CustomName ??
+                            (i.ItemId.HasValue && catalog.TryGetValue(i.ItemId.Value, out var c)
+                                ? (string.IsNullOrWhiteSpace(c.Brand) ? c.Name : $"{c.Name} ({c.Brand})")
+                                : "Unnamed");
+
+                        var amount = $"{i.Quantity} {i.Unit}".Trim();
+
+                        var container = i.LocationId.HasValue && locationMap.TryGetValue(i.LocationId.Value, out var loc)
+                            ? loc.Name
+                            : "(no container)";
+
+                        // link to inventory/{slug} if we know container slug, else fallback to inventory/edit
+                        var editHref = i.LocationId.HasValue && locationMap.TryGetValue(i.LocationId.Value, out var loc2)
+                            ? $"/inventory/{loc2.Slug}"
+                            : "/inventory/edit";
+
+                        return new InventoryRowVm(
+                            i.InventoryId.ToString()[..8],
+                            displayName,
+                            amount,
+                            container,
+                            i.Notes ?? "",
+                            editHref
+                        );
+                    })
+                    .ToList();
+
+                sections.Add(new PantrySectionVm(pantry.Name ?? "Unnamed Pantry", items));
+            }
+
+            _pantrySections = sections;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string ToSlug(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "inventory";
+        var chars = value.Trim().ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray();
+
+        var normalized = new string(chars);
+        while (normalized.Contains("--")) normalized = normalized.Replace("--", "-");
+
+        var slug = normalized.Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? "inventory" : slug;
+    }
+
+    private sealed record PantrySectionVm(string PantryName, List<InventoryRowVm> Items);
+
+    private sealed record InventoryRowVm(
+        string Id,
+        string Name,
+        string Amount,
+        string Container,
+        string Description,
+        string EditHref
+    );
 }
