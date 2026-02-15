@@ -30,31 +30,42 @@ html, body {
     text-decoration: none;
 }
 
-.menu .menu-item{
-    &:hover{
-        background-color: #19a85f;
-        border: 1px solid #19a85f;
-        border-radius: 10px;
-        padding-left: 5px;
-        transform: translate(1px, 0px);
-        transition: .3s;
+.sidebar-wrap .menu-item {
+    text-decoration: none;
+    color: rgba(255,255,255,0.92);
+    padding: 1px 10px;
+    border-radius: 10px;
+    font-weight: 200;
+    /* background-color: #19a85f !important; */
+    transition: .3s;
+}
 
-    }
+.sidebar-wrap .menu-item:hover {
+    background-color: #19a85f;
+    /* border: 1px solid #19a85f; */
+    transform: translate(5px, 0px);
+}
+
+.sidebar-wrap .menu-item.active {
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.18);
 }
 
 .primary-action {
     padding: 10px;
     background-color: #19a85f;
     border-radius: 10px;
+    display: flex;
+    gap: 1rem;
 }
 
 .primary-action:hover {
     opacity: .8;
 }
 
-.sidebar a:hover {
+/* .sidebar a:hover {
     color: #ffffff ;
-}
+} */
 
 /* Optional: nicer focus ring for keyboard users */
 .sidebar a:focus {
@@ -137,4 +148,16 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder,
 .form-floating > .form-control:focus::placeholder {
     text-align: start;
+}
+
+.sidebar-footer .footer-btn {
+    margin-top: auto;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.18);
+    border: 1px solid rgba(255,255,255,0.12);
+    width: 100%;
 }

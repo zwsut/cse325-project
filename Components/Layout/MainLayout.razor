@@ -1,21 +1,22 @@
-﻿@inherits LayoutComponentBase
-@using Supabase.Postgrest.Attributes
-@using Supabase.Postgrest.Models
+@inherits LayoutComponentBase
+@implements IDisposable
 @using System.Security.Claims
-@inject ISupabaseService SupabaseService
+@using cse325_project.Services
+@inject IUserContextService UserContextService
+@inject IAppDataChangeService AppDataChangeService
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
 
-
-
-<div class="app-shell">
+<div class="app-shell @GetSidebarClassNames()">
     <aside class="sidebar">
         <Sidebar />
     </aside>
+    <button class="sidebar-backdrop" type="button" aria-label="Close menu" @onclick="HideSidebar"></button>
 
     <div class="main">
         <header class="topbar">
             <div class="topbar-left">
-                <button class="icon-btn" type="button" title="Menu" aria-label="Menu">
+                <button class="icon-btn" type="button" title="Menu" aria-label="Menu" aria-expanded="@_isSidebarVisible" @onclick="ToggleSidebar">
                     <span class="hamburger"></span>
                 </button>
                 <span class="topbar-title">@_groupName</span>
@@ -37,100 +38,105 @@
     </div>
 </div>
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
-
 @code {
-
     private string _groupName = "KITS";
     private string _displayName = "User";
     private string _avatarText = "U";
+    private bool _isSidebarVisible = true;
+    private bool _isSidebarInitialized;
+    private const int MobileSidebarBreakpoint = 640;
 
     protected override async Task OnInitializedAsync()
+    {
+        AppDataChangeService.Changed += HandleDataChanged;
+        await RefreshHeaderAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_isSidebarInitialized)
+        {
+            return;
+        }
+
+        try
+        {
+            var viewportWidth = await JSRuntime.InvokeAsync<int>("appLayout.getViewportWidth");
+            _isSidebarVisible = viewportWidth > MobileSidebarBreakpoint;
+            _isSidebarInitialized = true;
+            StateHasChanged();
+        }
+        catch (InvalidOperationException)
+        {
+            // JS interop can fail during server prerender; retry next render.
+        }
+        catch (JSException)
+        {
+            _isSidebarInitialized = true;
+        }
+    }
+
+    private async Task RefreshHeaderAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
 
-        await SupabaseService.InitializeAsync();
-
-        var user = await LoadUserAsync(userIdClaim, email);
-        if (user is not null)
+        try
         {
+            var (user, group) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
             _displayName = user.DisplayName ?? user.Email ?? _displayName;
             _avatarText = BuildInitials(_displayName);
+            _groupName = group is null || string.IsNullOrWhiteSpace(group.Name)
+                ? _displayName + "'s Household"
+                : group.Name;
         }
-        else if (!string.IsNullOrWhiteSpace(email))
+        catch
         {
-            _displayName = email;
-            _avatarText = BuildInitials(_displayName);
-        }
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                _displayName = email;
+                _avatarText = BuildInitials(_displayName);
+            }
 
-        var groupName = await LoadGroupNameAsync(user?.UserId);
-        if (!string.IsNullOrWhiteSpace(groupName))
-        {
-            _groupName = groupName;
-        }
-        else
-        {
             _groupName = _displayName + "'s Household";
         }
     }
 
-    private async Task<AppUser?> LoadUserAsync(string? userIdClaim, string? email)
+    private void ToggleSidebar()
     {
-        if (!string.IsNullOrWhiteSpace(userIdClaim) && Guid.TryParse(userIdClaim, out var id))
-        {
-            var response = await SupabaseService.Client
-                .From<AppUser>()
-                .Where(u => u.UserId == id)
-                .Limit(1)
-                .Get();
-            return response.Models?.FirstOrDefault();
-        }
-
-        if (!string.IsNullOrWhiteSpace(email))
-        {
-            var response = await SupabaseService.Client
-                .From<AppUser>()
-                .Where(u => u.Email == email)
-                .Limit(1)
-                .Get();
-            return response.Models?.FirstOrDefault();
-        }
-
-        return null;
+        _isSidebarVisible = !_isSidebarVisible;
     }
 
-    private async Task<string?> LoadGroupNameAsync(Guid? userId)
+    private void HideSidebar()
     {
-        if (userId is null)
+        _isSidebarVisible = false;
+    }
+
+    private string GetSidebarClassNames()
+    {
+        var stateClass = _isSidebarVisible ? "sidebar-visible" : "sidebar-hidden";
+        var initClass = _isSidebarInitialized ? "sidebar-ready" : "sidebar-pending";
+        return $"{stateClass} {initClass}";
+    }
+
+    private void HandleDataChanged(string scope)
+    {
+        if (scope != AppDataScopes.Profile && scope != AppDataScopes.Household)
         {
-            return null;
+            return;
         }
 
-        var memberResponse = await SupabaseService.Client
-            .From<GroupMember>()
-            .Where(m => m.UserId == userId.Value)
-            .Limit(1)
-            .Get();
-
-        var membership = memberResponse.Models?.FirstOrDefault();
-        if (membership is null)
+        _ = InvokeAsync(async () =>
         {
-            return null;
-        }
+            await RefreshHeaderAsync();
+            StateHasChanged();
+        });
+    }
 
-        var groupResponse = await SupabaseService.Client
-            .From<Group>()
-            .Where(g => g.GroupId == membership.GroupId)
-            .Limit(1)
-            .Get();
-
-        return groupResponse.Models?.FirstOrDefault()?.Name;
+    public void Dispose()
+    {
+        AppDataChangeService.Changed -= HandleDataChanged;
     }
 
     private static string BuildInitials(string value)
@@ -149,38 +155,5 @@
         var first = parts[0][0];
         var last = parts[^1][0];
         return $"{char.ToUpperInvariant(first)}{char.ToUpperInvariant(last)}";
-    }
-
-    [Table("users")]
-    public class AppUser : BaseModel
-    {
-        [PrimaryKey("user_id", false)]
-        public Guid UserId { get; set; }
-
-        [Column("email")]
-        public string? Email { get; set; }
-
-        [Column("display_name")]
-        public string? DisplayName { get; set; }
-    }
-
-    [Table("group_members")]
-    public class GroupMember : BaseModel
-    {
-        [Column("group_id")]
-        public Guid GroupId { get; set; }
-
-        [Column("user_id")]
-        public Guid UserId { get; set; }
-    }
-
-    [Table("groups")]
-    public class Group : BaseModel
-    {
-        [PrimaryKey("group_id", false)]
-        public Guid GroupId { get; set; }
-
-        [Column("name")]
-        public string? Name { get; set; }
     }
 }

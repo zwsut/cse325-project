@@ -108,7 +108,7 @@
                 </button>
             </form>
 
-            <div class="divider">
+            @* <div class="divider">
                 <span>or continue with</span>
             </div>
 
@@ -121,7 +121,7 @@
                     <span class="social-icon github-icon"></span>
                     GitHub
                 </button>
-            </div>
+            </div> *@
 
             <div class="signup-link">
                 <p>Don't have an account? <a href="/signup">Sign up</a></p>
@@ -273,16 +273,5 @@
         }
 
         return "We couldn't send a reset link. Please try again.";
-    }
-
-    private sealed class LoginModel
-    {
-        [Required, EmailAddress]
-        public string Email { get; set; } = string.Empty;
-
-        [Required, MinLength(6)]
-        public string Password { get; set; } = string.Empty;
-
-        public bool RememberMe { get; set; }
     }
 }

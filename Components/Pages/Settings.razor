@@ -1,0 +1,431 @@
+@page "/settings"
+@implements IDisposable
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Supabase.Gotrue
+@using cse325_project.Services
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject IAppDataChangeService AppDataChangeService
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Settings</PageTitle>
+
+<h1 class="simple-title">Settings</h1>
+<p class="simple-muted">Manage your profile, household, and categories.</p>
+
+@if (_isLoading && _currentUser is null && string.IsNullOrWhiteSpace(_profileModel.Email))
+{
+    <p>Loading settings...</p>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(GetMessage("general")))
+    {
+        <div class="form-message">@GetMessage("general")</div>
+    }
+
+    <div class="settings-sections">
+        <section class="settings-card">
+            <h2>Profile</h2>
+            <div class="form-row">
+                <label>Display Name</label>
+                <div class="input-inline">
+                    <InputText @bind-Value="_profileModel.DisplayName" class="input" />
+                    <button class="btn-save btn-inline" type="button" @onclick="SaveDisplayNameAsync" disabled="@_isLoading">Update</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(GetMessage("display")))
+            {
+                <div class="form-message">@GetMessage("display")</div>
+            }
+
+            <div class="form-row">
+                <label>Email</label>
+                <div class="input-inline">
+                    <InputText @bind-Value="_profileModel.Email" class="input" />
+                    <button class="btn-save btn-inline" type="button" @onclick="SaveEmailAsync" disabled="@_isLoading">Update</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(GetMessage("email")))
+            {
+                <div class="form-message">@GetMessage("email")</div>
+            }
+        </section>
+
+        <section class="settings-card">
+            <h2>Password</h2>
+            <EditForm Model="_passwordModel" OnValidSubmit="SavePasswordAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="form-row">
+                    <label>New Password</label>
+                    <InputText @bind-Value="_passwordModel.NewPassword" type="password" class="input" />
+                </div>
+
+                <div class="form-row">
+                    <label>Confirm Password</label>
+                    <InputText @bind-Value="_passwordModel.ConfirmPassword" type="password" class="input" />
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-save" type="submit" disabled="@_isLoading">Update Password</button>
+                </div>
+            </EditForm>
+
+            @if (!string.IsNullOrWhiteSpace(GetMessage("password")))
+            {
+                <div class="form-message">@GetMessage("password")</div>
+            }
+        </section>
+
+        <section class="settings-card">
+            <h2>Household (Group)</h2>
+            @if (_currentGroup is null)
+            {
+                <p class="simple-muted">No household found for this account.</p>
+            }
+            else
+            {
+                <EditForm Model="_householdModel" OnValidSubmit="SaveHouseholdAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="form-row">
+                        <label>Household Name</label>
+                        <InputText @bind-Value="_householdModel.HouseholdName" class="input" />
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn-save" type="submit" disabled="@_isLoading">Save Household</button>
+                    </div>
+                </EditForm>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(GetMessage("household")))
+            {
+                <div class="form-message">@GetMessage("household")</div>
+            }
+        </section>
+
+        <SettingsCategoriesSection CurrentUser="_currentUser" CurrentGroup="_currentGroup" />
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private (string Location, string Text)? _message;
+
+    private readonly SettingsProfileModel _profileModel = new();
+    private readonly SettingsPasswordModel _passwordModel = new();
+    private readonly SettingsHouseholdModel _householdModel = new();
+
+    private AppUser? _currentUser;
+    private Group? _currentGroup;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppDataChangeService.Changed += HandleDataChanged;
+
+        try
+        {
+            await SupabaseService.InitializeAsync();
+            await LoadSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            SetMessage("general", $"Could not load settings: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void HandleDataChanged(string scope)
+    {
+        if (scope != AppDataScopes.Profile &&
+            scope != AppDataScopes.Household)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            if (_isLoading)
+            {
+                return;
+            }
+
+            await LoadSettingsAsync();
+            StateHasChanged();
+        });
+    }
+
+    private string? GetMessage(string location)
+    {
+        return _message is { } message && message.Location == location ? message.Text : null;
+    }
+
+    private void SetMessage(string location, string text)
+    {
+        _message = (location, text);
+    }
+
+    private void ClearMessage()
+    {
+        _message = null;
+    }
+
+    private async Task LoadSettingsAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var emailClaim = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+        var authUser = SupabaseService.Client.Auth.CurrentUser;
+        var authEmail = authUser?.Email;
+        var authDisplayName = TryGetAuthDisplayName(authUser);
+
+        var resolvedEmail = TextHelpers.FirstNonEmpty(authEmail, emailClaim) ?? string.Empty;
+        var resolvedDisplayName = TextHelpers.NormalizeDisplayName(
+            TextHelpers.FirstNonEmpty(authDisplayName, TextHelpers.DisplayNameFromEmail(resolvedEmail)) ?? string.Empty);
+
+        // Always show current auth-backed values, even if household/group bootstrap fails.
+        _profileModel.Email = resolvedEmail;
+        _profileModel.DisplayName = resolvedDisplayName;
+
+        try
+        {
+            var (user, group) = await UserContextService.GetForClaimsAsync(userIdClaim, resolvedEmail, authDisplayName);
+            _currentUser = user;
+            _currentGroup = group;
+
+            _profileModel.DisplayName = TextHelpers.FirstNonEmpty(_currentUser.DisplayName, resolvedDisplayName) ?? string.Empty;
+            _profileModel.Email = TextHelpers.FirstNonEmpty(_currentUser.Email, resolvedEmail) ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            SetMessage("general", $"Unable to load your user/group profile: {ex.Message}");
+        }
+
+        _householdModel.HouseholdName = _currentGroup?.Name ?? string.Empty;
+    }
+
+    private static string? TryGetAuthDisplayName(User? authUser)
+    {
+        if (authUser is null)
+        {
+            return null;
+        }
+
+        var metadataProp = authUser.GetType().GetProperty("UserMetadata")
+            ?? authUser.GetType().GetProperty("Data");
+        var metadataValue = metadataProp?.GetValue(authUser);
+
+        if (metadataValue is IReadOnlyDictionary<string, object> roDict &&
+            roDict.TryGetValue("display_name", out var roValue))
+        {
+            return roValue?.ToString()?.Trim();
+        }
+
+        if (metadataValue is IDictionary<string, object> dict &&
+            dict.TryGetValue("display_name", out var value))
+        {
+            return value?.ToString()?.Trim();
+        }
+
+        return null;
+    }
+
+    private async Task SaveDisplayNameAsync()
+    {
+        if (_currentUser is null || _isLoading)
+        {
+            return;
+        }
+
+        ClearMessage();
+        var newDisplayName = TextHelpers.NormalizeDisplayName(_profileModel.DisplayName);
+        if (string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            SetMessage("display", "Display name cannot be empty.");
+            return;
+        }
+
+        if (string.Equals(newDisplayName, _currentUser.DisplayName, StringComparison.Ordinal))
+        {
+            SetMessage("display", "Display name is already up to date.");
+            return;
+        }
+
+        _isLoading = true;
+
+        try
+        {
+            await SupabaseService.Client
+                .From<AppUser>()
+                .Where(u => u.UserId == _currentUser.UserId)
+                .Set(u => u.DisplayName!, newDisplayName)
+                .Update();
+
+            _currentUser.DisplayName = newDisplayName;
+            _profileModel.DisplayName = newDisplayName;
+            SetMessage("display", "Display name updated.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Profile);
+
+            try
+            {
+                await SupabaseService.Client.Auth.Update(new UserAttributes
+                {
+                    Data = new Dictionary<string, object>
+                    {
+                        ["display_name"] = newDisplayName
+                    }
+                });
+            }
+            catch
+            {
+            }
+        }
+        catch (Exception ex)
+        {
+            SetMessage("display", $"Could not save display name: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveEmailAsync()
+    {
+        if (_currentUser is null || _isLoading)
+        {
+            return;
+        }
+
+        ClearMessage();
+        var newEmail = _profileModel.Email.Trim();
+        if (string.IsNullOrWhiteSpace(newEmail) || !(new EmailAddressAttribute().IsValid(newEmail)))
+        {
+            SetMessage("email", "Enter a valid email address.");
+            return;
+        }
+
+        if (string.Equals(newEmail, _currentUser.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            SetMessage("email", "Email is already up to date.");
+            return;
+        }
+
+        _isLoading = true;
+        try
+        {
+            await SupabaseService.Client.Auth.Update(new UserAttributes
+            {
+                Email = newEmail
+            });
+
+            await SupabaseService.Client
+                .From<AppUser>()
+                .Where(u => u.UserId == _currentUser.UserId)
+                .Set(u => u.Email!, newEmail)
+                .Update();
+
+            _currentUser.Email = newEmail;
+            SetMessage("email", "Email updated. Check your inbox to confirm the new email address.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Profile);
+        }
+        catch (Exception ex)
+        {
+            SetMessage("email", $"Could not save email: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SavePasswordAsync()
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        ClearMessage();
+
+        var password = _passwordModel.NewPassword?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            SetMessage("password", "Enter a new password.");
+            return;
+        }
+
+        if (!string.Equals(_passwordModel.NewPassword, _passwordModel.ConfirmPassword, StringComparison.Ordinal))
+        {
+            SetMessage("password", "Passwords do not match.");
+            return;
+        }
+
+        _isLoading = true;
+        try
+        {
+            await SupabaseService.Client.Auth.Update(new UserAttributes
+            {
+                Password = _passwordModel.NewPassword
+            });
+
+            _passwordModel.NewPassword = string.Empty;
+            _passwordModel.ConfirmPassword = string.Empty;
+            SetMessage("password", "Password updated.");
+        }
+        catch (Exception ex)
+        {
+            SetMessage("password", $"Could not update password: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveHouseholdAsync()
+    {
+        if (_currentGroup is null || _isLoading)
+        {
+            return;
+        }
+
+        _isLoading = true;
+        ClearMessage();
+
+        try
+        {
+            var newName = _householdModel.HouseholdName.Trim();
+            await SupabaseService.Client
+                .From<Group>()
+                .Where(g => g.GroupId == _currentGroup.GroupId)
+                .Set(g => g.Name!, newName)
+                .Update();
+
+            _currentGroup.Name = newName;
+            SetMessage("household", "Household name updated.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Household);
+        }
+        catch (Exception ex)
+        {
+            SetMessage("household", $"Could not update household: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        AppDataChangeService.Changed -= HandleDataChanged;
+    }
+}

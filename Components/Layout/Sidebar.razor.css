@@ -11,9 +11,11 @@
 
 .sidebar-wrap {
     padding: 16px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    gap: 2rem;
+    height: 100%;
 }
 
 .brand {
@@ -93,7 +95,7 @@
     font-weight: 900;
     letter-spacing: 0.02em;
     opacity: 0.82;
-    padding: 8px 10px;
+    padding: 10px 0px 0px 0px;
     text-transform: uppercase;
 }
 
@@ -128,44 +130,44 @@
     padding-left: 20px;
 }
 
-.menu.menu-item {
+/* .menu .menu-item {
     text-decoration: none;
     color: rgba(255,255,255,0.92);
     padding: 9px 10px;
     border-radius: 10px;
     font-weight: 650;
     background-color: #19a85f!important;
+    transition: .3s;
 }
 
-.menu.menu-item:hover {
+.menu-item:hover {
     background-color: #19a85f;
     border: 1px solid #19a85f;
-    border-radius: 10px;
-    padding-left: 5px;
     transform: translate(5px, 0px);
-    transition: .3s;
+    
 }
 
 .menu-item.active {
     background: rgba(255,255,255,0.14);
     border: 1px solid rgba(255,255,255,0.18);
-}
+} */
 
 .menu-label {
-    margin: 8px 10px 2px;
+    margin: 0rem 1rem;
     font-size: 0.78rem;
     opacity: 0.65;
 }
 
-.sidebar-footer {
+.sidebar-footer{
     margin-top: auto;
     display: flex;
     align-items: center;
-    gap: 10px;
+    /* gap: 10px;
     padding: 12px;
     border-radius: 12px;
     background: rgba(0,0,0,0.18);
     border: 1px solid rgba(255,255,255,0.12);
+    width: 100%; */
 }
 
 .footer-avatar {

@@ -1,12 +1,14 @@
 using System.Security.Claims;
 using cse325_project.Components;
+using cse325_project.lib;
+using cse325_project.Models.Database;
+using cse325_project.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Components.Authorization;
-using Microsoft.EntityFrameworkCore;
+using Supabase.Gotrue;
 using Supabase.Gotrue.Exceptions;
-using cse325_project.Services;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +26,8 @@ var supabaseSettings = builder.Configuration
 builder.Services.AddSingleton(supabaseSettings);
 builder.Services.AddScoped<ISupabaseService, SupabaseService>();
 builder.Services.AddScoped<AuthenticationStateProvider, SupabaseAuthStateProvider>();
+builder.Services.AddScoped<IUserContextService, UserContextService>();
+builder.Services.AddScoped<IAppDataChangeService, AppDataChangeService>();
 builder.Services.AddScoped<SupabaseAuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<SupabaseAuthStateProvider>());
 builder.Services.AddScoped<ShoppingListService>();
@@ -69,7 +73,7 @@ app.MapPost("/auth/login", async (
     {
         await antiforgery.ValidateRequestAsync(httpContext);
     }
-    catch (AntiforgeryValidationException ex)
+    catch (AntiforgeryValidationException)
     {
         return Results.BadRequest("Invalid request.");
     }
@@ -95,19 +99,7 @@ app.MapPost("/auth/login", async (
             return Results.Redirect("/login?error=confirm");
         }
 
-        var claims = new List<Claim>
-        {
-            new Claim(ClaimTypes.NameIdentifier, userId ?? string.Empty),
-            new Claim(ClaimTypes.Email, userEmail ?? email),
-            new Claim(ClaimTypes.UserData, accessToken),
-            new Claim("supabase:refresh_token", refreshToken)
-        };
-
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
-        await httpContext.SignInAsync(
-            CookieAuthenticationDefaults.AuthenticationScheme,
-            principal,
-            new AuthenticationProperties { IsPersistent = true });
+        await SignInWithCookieAsync(httpContext, accessToken, refreshToken, userId, userEmail ?? email);
 
         return Results.Redirect(returnUrl);
     }
@@ -130,6 +122,105 @@ app.MapPost("/auth/login", async (
     }
 });
 
+app.MapPost("/auth/signup", async (
+    HttpContext httpContext,
+    ISupabaseService supabaseService,
+    IAntiforgery antiforgery) =>
+{
+    try
+    {
+        await antiforgery.ValidateRequestAsync(httpContext);
+    }
+    catch (AntiforgeryValidationException)
+    {
+        return Results.BadRequest("Invalid request.");
+    }
+
+    var form = await httpContext.Request.ReadFormAsync();
+    var firstName = form["firstName"].ToString().Trim();
+    var lastName = form["lastName"].ToString().Trim();
+    var email = form["email"].ToString().Trim();
+    var password = form["password"].ToString();
+    var confirmPassword = form["confirmPassword"].ToString();
+    var returnUrl = SanitizeReturnUrl(form["returnUrl"].ToString());
+
+    if (string.IsNullOrWhiteSpace(firstName) ||
+        string.IsNullOrWhiteSpace(lastName) ||
+        string.IsNullOrWhiteSpace(email) ||
+        string.IsNullOrWhiteSpace(password))
+    {
+        return Results.Redirect("/signup?error=missing");
+    }
+
+    if (password.Length < 6 || !string.Equals(password, confirmPassword, StringComparison.Ordinal))
+    {
+        return Results.Redirect("/signup?error=password");
+    }
+
+    try
+    {
+        await supabaseService.InitializeAsync();
+        var displayName = BuildDisplayName(firstName, lastName);
+
+        var signupResult = await supabaseService.Client.Auth.SignUp(email, password, new SignUpOptions
+        {
+            Data = new Dictionary<string, object>
+            {
+                ["display_name"] = displayName
+            }
+        });
+        var (accessToken, refreshToken, userId, userEmail) =
+            ExtractSessionTokens(signupResult, supabaseService.Client.Auth.CurrentSession);
+
+        // If sign-up does not create a session directly, sign in immediately.
+        if (string.IsNullOrWhiteSpace(accessToken) || string.IsNullOrWhiteSpace(refreshToken))
+        {
+            var signInResult = await supabaseService.Client.Auth.SignIn(email, password);
+            (accessToken, refreshToken, userId, userEmail) =
+                ExtractSessionTokens(signInResult, supabaseService.Client.Auth.CurrentSession);
+        }
+
+        if (string.IsNullOrWhiteSpace(accessToken) || string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return Results.Redirect("/signup?error=confirm");
+        }
+
+        if (!Guid.TryParse(userId, out var parsedUserId))
+        {
+            return Results.Redirect("/signup?error=unknown");
+        }
+
+        try
+        {
+            await EnsureSignupUserAndHouseholdAsync(supabaseService, parsedUserId, userEmail ?? email, displayName);
+        }
+        catch
+        {
+            return Results.Redirect("/signup?error=household");
+        }
+
+        await SignInWithCookieAsync(httpContext, accessToken, refreshToken, userId, userEmail ?? email);
+        return Results.Redirect(returnUrl);
+    }
+    catch (GotrueException gte)
+    {
+        var error = gte.Reason switch
+        {
+            FailureHint.Reason.UserAlreadyRegistered => "exists",
+            FailureHint.Reason.UserBadEmailAddress => "invalid",
+            FailureHint.Reason.UserTooManyRequests => "rate",
+            FailureHint.Reason.UserEmailNotConfirmed => "confirm",
+            _ => "unknown"
+        };
+
+        return Results.Redirect($"/signup?error={error}");
+    }
+    catch (Exception)
+    {
+        return Results.Redirect("/signup?error=unknown");
+    }
+});
+
 app.MapPost("/auth/logout", async (
     HttpContext httpContext,
     ISupabaseService supabaseService,
@@ -139,7 +230,7 @@ app.MapPost("/auth/logout", async (
     {
         await antiforgery.ValidateRequestAsync(httpContext);
     }
-    catch (AntiforgeryValidationException ex)
+    catch (AntiforgeryValidationException)
     {
         return Results.BadRequest("Invalid request.");
     }
@@ -189,5 +280,106 @@ static (string? AccessToken, string? RefreshToken, string? UserId, string? Email
 
     var user = session.User;
     return (session.AccessToken, session.RefreshToken, user?.Id, user?.Email);
+}
+
+static async Task SignInWithCookieAsync(
+    HttpContext httpContext,
+    string accessToken,
+    string refreshToken,
+    string? userId,
+    string email)
+{
+    var claims = new List<Claim>
+    {
+        new(ClaimTypes.NameIdentifier, userId ?? string.Empty),
+        new(ClaimTypes.Email, email),
+        new(ClaimTypes.UserData, accessToken),
+        new("supabase:refresh_token", refreshToken)
+    };
+
+    var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+    await httpContext.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        principal,
+        new AuthenticationProperties { IsPersistent = true });
+}
+
+static string BuildDisplayName(string firstName, string lastName)
+{
+    var normalized = TextHelpers.NormalizeDisplayName($"{firstName} {lastName}");
+    if (string.IsNullOrWhiteSpace(normalized))
+    {
+        return "User";
+    }
+
+    return normalized;
+}
+
+static async Task EnsureSignupUserAndHouseholdAsync(
+    ISupabaseService supabaseService,
+    Guid userId,
+    string email,
+    string displayName)
+{
+    // User profile should normally be created by DB trigger, but ensure it exists for signup flow.
+    var userResponse = await supabaseService.Client
+        .From<AppUser>()
+        .Where(u => u.UserId == userId)
+        .Limit(1)
+        .Get();
+
+    var appUser = userResponse.Models?.FirstOrDefault();
+    if (appUser is null)
+    {
+        try
+        {
+            await supabaseService.Client
+                .From<AppUser>()
+                .Insert(new AppUser
+                {
+                    UserId = userId,
+                    Email = email,
+                    DisplayName = displayName,
+                    CreatedAt = DateTime.UtcNow
+                });
+        }
+        catch
+        {
+            // Trigger path may have inserted profile row concurrently; ignore and continue.
+        }
+    }
+
+    var membershipResponse = await supabaseService.Client
+        .From<GroupMember>()
+        .Where(m => m.UserId == userId)
+        .Limit(1)
+        .Get();
+
+    if ((membershipResponse.Models?.Count ?? 0) > 0)
+    {
+        return;
+    }
+
+    var group = new Group
+    {
+        GroupId = Guid.NewGuid(),
+        Name = $"{displayName}'s Household",
+        CreatedByUser = userId,
+        CreatedAt = DateTime.UtcNow
+    };
+
+    await supabaseService.Client
+        .From<Group>()
+        .Insert(group);
+
+    await supabaseService.Client
+        .From<GroupMember>()
+        .Insert(new GroupMember
+        {
+            GroupId = group.GroupId,
+            UserId = userId,
+            Role = "owner",
+            JoinedAt = DateTime.UtcNow
+        });
 }
 

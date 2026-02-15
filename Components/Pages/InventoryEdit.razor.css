@@ -78,6 +78,11 @@ textarea.input {
 	color: #0b6620;
 }
 
+.validation-message {
+    color: #b42318;
+    font-size: 0.9rem;
+}
+
 @media (max-width: 560px) {
 	.form-wrap { padding: 12px; margin: 12px; }
 	.form-actions { flex-direction: column; align-items: stretch; }
@@ -117,5 +122,18 @@ textarea.input {
 }
 .locations-table button:hover {
     background: rgba(12, 87, 57, 0.1);
+}
+
+.locations-table .empty-row {
+    text-align: center;
+    color: var(--muted-text, #666);
+    font-style: italic;
+}
+
+.location-group-title {
+    margin: 1.25rem 0 0.5rem;
+    color: var(--accent, #0c5739);
+    font-size: 1.05rem;
+    font-weight: 700;
 }
 
