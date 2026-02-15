@@ -48,8 +48,15 @@ public sealed class SupabaseAuthStateProvider : AuthenticationStateProvider
 
         if (user is not null)
         {
-            claims.Add(new Claim(ClaimTypes.NameIdentifier, user.Id));
-            claims.Add(new Claim(ClaimTypes.Email, user.Email ?? string.Empty));
+            if (!string.IsNullOrWhiteSpace(user.Id))
+            {
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, user.Id));
+            }
+
+            if (!string.IsNullOrWhiteSpace(user.Email))
+            {
+                claims.Add(new Claim(ClaimTypes.Email, user.Email));
+            }
         }
         else if (!string.IsNullOrWhiteSpace(session.AccessToken))
         {

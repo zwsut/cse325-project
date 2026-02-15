@@ -76,14 +76,12 @@
 @code {
     [Parameter] public string? Location { get; set; }
 
-    private sealed record InventoryItem(string Id, string Name, string Amount, string Category, string Description);
-
-    private InventoryItem? Editing;
+    private InventoryDisplayItem? Editing;
 
     private string Title => ToTitle(Location);
-    private IReadOnlyList<InventoryItem> Items => GetItems(Location);
+    private IReadOnlyList<InventoryDisplayItem> Items => GetItems(Location);
 
-    private void StartEdit(InventoryItem item) => Editing = item;
+    private void StartEdit(InventoryDisplayItem item) => Editing = item;
     private void CloseEdit() => Editing = null;
 
     private static string ToTitle(string? location)
@@ -96,12 +94,12 @@
             .Aggregate((a, b) => $"{a} {b}");
     }
 
-    private static IReadOnlyList<InventoryItem> GetItems(string? location)
+    private static IReadOnlyList<InventoryDisplayItem> GetItems(string? location)
     {
         // Sample data for UI scaffolding (replace with database/service later)
         return location?.ToLowerInvariant() switch
         {
-            "pantry" => new List<InventoryItem>
+            "pantry" => new List<InventoryDisplayItem>
             {
                 new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
                 new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
@@ -112,14 +110,14 @@
                 new("056", "Sprite", "2 liters", "Drink", "Lorem ipsum dolor sit amet consectetur."),
                 new("063", "Costco Muffins", "24 Muffins", "Treat", "Lorem ipsum dolor sit amet consectetur."),
             },
-            "food-storage" => new List<InventoryItem>
+            "food-storage" => new List<InventoryDisplayItem>
             {
                 new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
                 new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),
                 new("103", "Olive Oil", "1 bottle", "Cooking", "Lorem ipsum dolor sit amet consectetur."),
                 new("104", "Pasta", "6 boxes", "Grain", "Lorem ipsum dolor sit amet consectetur."),
             },
-            _ => new List<InventoryItem>
+            _ => new List<InventoryDisplayItem>
             {
                 new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
                 new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),

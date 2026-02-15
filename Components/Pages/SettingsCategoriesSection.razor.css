@@ -1,0 +1,111 @@
+.settings-card {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 16px;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.75);
+    box-shadow: 0 2px 10px rgba(12, 87, 57, 0.06);
+}
+
+.settings-card h2 {
+    margin: 0 0 0.9rem;
+    font-size: 1.2rem;
+    color: var(--brand-800);
+    font-weight: 800;
+}
+
+.settings-card .form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.settings-card .form-row label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.settings-card .input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 12px;
+    font-size: 0.95rem;
+    background: #fff;
+}
+
+.settings-card .form-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.settings-card .btn-save {
+    background: var(--brand-700);
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.settings-card .btn-save:hover {
+    background: var(--brand-800);
+}
+
+.settings-card .btn-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.settings-card .form-message {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(25, 168, 95, 0.1);
+    color: var(--brand-900);
+}
+
+.settings-card .table-wrap {
+    border-radius: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.settings-card .locations-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.settings-card .locations-table th,
+.settings-card .locations-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    text-align: left;
+}
+
+.settings-card .locations-table th:first-child,
+.settings-card .locations-table td:first-child {
+    width: 100%;
+}
+
+.settings-card .locations-table th:last-child,
+.settings-card .locations-table td:last-child {
+    width: 1%;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.settings-card .locations-table th {
+    background: var(--brand-600);
+    color: #fff;
+    font-weight: 800;
+}
+
+.settings-card .locations-table tr:last-child td {
+    border-bottom: none;
+}

@@ -1,11 +1,7 @@
 @page "/signup"
 @using Microsoft.AspNetCore.Components.Authorization
-@using Microsoft.AspNetCore.Components.Forms
-@using System.ComponentModel.DataAnnotations
-@using Supabase.Gotrue.Exceptions
 @layout LoginLayout
 @inject NavigationManager Navigation
-@inject AuthenticationStateProvider AuthStateProvider
 @attribute [AllowAnonymous]
 @rendermode InteractiveServer
 
@@ -39,43 +35,37 @@
                 <p>Join KITS to start tracking your kitchen inventory</p>
             </div>
 
-            <EditForm EditContext="_editContext" OnSubmit="HandleSubmitAsync" FormName="signup" class="signup-form" novalidate>
+            <form method="post" action="/auth/signup" class="signup-form" novalidate>
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@_returnUrl" />
+
                 <div class="form-row">
-                    <div class="form-group @(HasError(nameof(SignupModel.FirstName)) ? "error" : "")">
+                    <div class="form-group">
                         <div class="input-wrapper">
                             <input id="firstName" name="firstName" type="text" required @bind="_model.FirstName" />
                             <label for="firstName">First Name</label>
                             <span class="focus-border"></span>
                         </div>
-                        <span class="error-message @(HasError(nameof(SignupModel.FirstName)) ? "show" : "")">
-                            @GetError(nameof(SignupModel.FirstName))
-                        </span>
                     </div>
 
-                    <div class="form-group @(HasError(nameof(SignupModel.LastName)) ? "error" : "")">
+                    <div class="form-group">
                         <div class="input-wrapper">
                             <input id="lastName" name="lastName" type="text" required @bind="_model.LastName" />
                             <label for="lastName">Last Name</label>
                             <span class="focus-border"></span>
                         </div>
-                        <span class="error-message @(HasError(nameof(SignupModel.LastName)) ? "show" : "")">
-                            @GetError(nameof(SignupModel.LastName))
-                        </span>
                     </div>
                 </div>
 
-                <div class="form-group @(HasError(nameof(SignupModel.Email)) ? "error" : "")">
+                <div class="form-group">
                     <div class="input-wrapper">
                         <input id="email" name="email" type="email" required autocomplete="email" @bind="_model.Email" />
                         <label for="email">Email Address</label>
                         <span class="focus-border"></span>
                     </div>
-                    <span class="error-message @(HasError(nameof(SignupModel.Email)) ? "show" : "")">
-                        @GetError(nameof(SignupModel.Email))
-                    </span>
                 </div>
 
-                <div class="form-group @(HasError(nameof(SignupModel.Password)) ? "error" : "")">
+                <div class="form-group">
                     <div class="input-wrapper password-wrapper">
                         @if (passwordVisible)
                         {
@@ -91,12 +81,9 @@
                         </button>
                         <span class="focus-border"></span>
                     </div>
-                    <span class="error-message @(HasError(nameof(SignupModel.Password)) ? "show" : "")">
-                        @GetError(nameof(SignupModel.Password))
-                    </span>
                 </div>
 
-                <div class="form-group @(HasError(nameof(SignupModel.ConfirmPassword)) ? "error" : "")">
+                <div class="form-group">
                     <div class="input-wrapper password-wrapper">
                         @if (confirmVisible)
                         {
@@ -112,30 +99,13 @@
                         </button>
                         <span class="focus-border"></span>
                     </div>
-                    <span class="error-message @(HasError(nameof(SignupModel.ConfirmPassword)) ? "show" : "")">
-                        @GetError(nameof(SignupModel.ConfirmPassword))
-                    </span>
                 </div>
 
-                <div class="form-group">
-                    <div class="input-wrapper">
-                        <InputFile id="profileImage" class="file-input" accept="image/*" OnChange="HandleImageChanged" />
-                        <label class="file-label" for="profileImage">
-                            <span class="file-label-text">Optional Profile Image</span>
-                            <span class="file-label-subtext">@(selectedImageName ?? "Choose an image")</span>
-                        </label>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(imageError))
-                    {
-                        <span class="error-message show">@imageError</span>
-                    }
-                </div>
-
-                <button type="submit" class="signup-btn btn @(isSubmitting ? "loading" : "")" disabled="@isSubmitting">
+                <button type="submit" class="signup-btn btn">
                     <span class="btn-text">Create Account</span>
                     <span class="btn-loader"></span>
                 </button>
-            </EditForm>
+            </form>
 
             <div class="signup-link">
                 <p>Already have an account? <a href="/login">Sign in</a></p>
@@ -145,160 +115,43 @@
             {
                 <div class="form-error">@errorMessage</div>
             }
-            @if (!string.IsNullOrWhiteSpace(successMessage))
-            {
-                <div class="form-success">@successMessage</div>
-            }
         </div>
     </div>
 </div>
 
 @code {
     private readonly SignupModel _model = new();
-    private EditContext _editContext = default!;
-    private readonly Dictionary<string, string> _errors = new();
-    private bool isSubmitting;
-    private string? errorMessage;
-    private string? successMessage;
     private bool passwordVisible;
     private bool confirmVisible;
-    private IBrowserFile? selectedImage;
-    private string? selectedImageName;
-    private string? imageError;
+    private string? errorMessage;
+    private string _returnUrl = "/";
 
     protected override void OnInitialized()
     {
-        _editContext = new EditContext(_model);
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+        var returnUrl = query.Get("returnUrl");
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Uri.TryCreate(returnUrl, UriKind.Relative, out _))
+        {
+            _returnUrl = returnUrl;
+        }
+
+        var error = query.Get("error");
+        errorMessage = error switch
+        {
+            "missing" => "Please fill in all required fields.",
+            "password" => "Passwords must match and be at least 6 characters.",
+            "exists" => "An account with this email already exists. Try signing in.",
+            "invalid" => "That email address is invalid.",
+            "confirm" => "Account created but email confirmation is required before sign in.",
+            "household" => "Account created, but we could not finish setting up your household. Please try again.",
+            "rate" => "Too many attempts. Please wait and try again.",
+            "unknown" => "We could not create your account. Please try again.",
+            _ => null
+        };
     }
 
     private void TogglePassword() => passwordVisible = !passwordVisible;
     private void ToggleConfirm() => confirmVisible = !confirmVisible;
-
-    private void HandleImageChanged(InputFileChangeEventArgs args)
-    {
-        imageError = null;
-        selectedImage = args.File;
-        selectedImageName = selectedImage?.Name;
-
-        if (selectedImage is null)
-        {
-            return;
-        }
-
-        if (!selectedImage.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            imageError = "Please choose an image file.";
-            selectedImage = null;
-            selectedImageName = null;
-            return;
-        }
-
-        const long maxBytes = 2 * 1024 * 1024;
-        if (selectedImage.Size > maxBytes)
-        {
-            imageError = "Image must be 2MB or smaller.";
-            selectedImage = null;
-            selectedImageName = null;
-        }
-    }
-
-    private async Task HandleSubmitAsync(EditContext context)
-    {
-        if (isSubmitting)
-        {
-            return;
-        }
-
-        _errors.Clear();
-        errorMessage = null;
-        successMessage = null;
-
-        if (!ValidateModel())
-        {
-            return;
-        }
-
-        if (AuthStateProvider is not SupabaseAuthStateProvider supabaseAuth)
-        {
-            errorMessage = "Auth provider is not configured.";
-            return;
-        }
-
-        isSubmitting = true;
-        try
-        {
-            await supabaseAuth.SignUpAsync(_model.Email, _model.Password);
-            successMessage = "Account created. Please check your email to confirm, then sign in.";
-        }
-        catch (Exception ex)
-        {
-            errorMessage = MapSignupError(ex);
-        }
-        finally
-        {
-            isSubmitting = false;
-        }
-    }
-
-    private bool ValidateModel()
-    {
-        var validationResults = new List<ValidationResult>();
-        var isValid = Validator.TryValidateObject(
-            _model,
-            new ValidationContext(_model),
-            validationResults,
-            validateAllProperties: true);
-
-        foreach (var result in validationResults)
-        {
-            var memberName = result.MemberNames.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(memberName))
-            {
-                _errors[memberName] = result.ErrorMessage ?? "Invalid value.";
-            }
-        }
-
-        return isValid;
-    }
-
-    private bool HasError(string fieldName) => _errors.ContainsKey(fieldName);
-    private string GetError(string fieldName) => _errors.TryGetValue(fieldName, out var msg) ? msg : string.Empty;
-
-    private static string MapSignupError(Exception ex)
-    {
-        if (ex is GotrueException gte)
-        {
-            return gte.Reason switch
-            {
-                FailureHint.Reason.UserAlreadyRegistered =>
-                    "An account with that email already exists. Try signing in or resetting your password.",
-                FailureHint.Reason.UserBadEmailAddress =>
-                    "That email address looks invalid. Try a different email address.",
-                FailureHint.Reason.UserTooManyRequests =>
-                    "Too many attempts. Please wait a moment and try again.",
-                _ =>
-                    "We couldn't create your account. Please check your details and try again."
-            };
-        }
-
-        return "We couldn't create your account. Please check your details and try again.";
-    }
-
-    private sealed class SignupModel
-    {
-        [Required]
-        public string FirstName { get; set; } = string.Empty;
-
-        [Required]
-        public string LastName { get; set; } = string.Empty;
-
-        [Required, EmailAddress]
-        public string Email { get; set; } = string.Empty;
-
-        [Required, MinLength(6)]
-        public string Password { get; set; } = string.Empty;
-
-        [Required, Compare(nameof(Password), ErrorMessage = "Passwords do not match.")]
-        public string ConfirmPassword { get; set; } = string.Empty;
-    }
 }

@@ -38,3 +38,6 @@ public sealed class SupabaseService : ISupabaseService
         await Client.InitializeAsync();
     }
 }
+
+
+

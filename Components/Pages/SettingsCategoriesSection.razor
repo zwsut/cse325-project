@@ -1,0 +1,320 @@
+@implements IDisposable
+@using cse325_project.Services
+@inject ISupabaseService SupabaseService
+@inject IAppDataChangeService AppDataChangeService
+
+<section class="settings-card">
+    <h2>Categories</h2>
+
+    @if (CurrentGroup is null)
+    {
+        <p class="simple-muted">Create or join a household to manage categories.</p>
+    }
+    else
+    {
+        <div class="form-row">
+            <label>New Category</label>
+            <InputText @bind-Value="_newCategoryName" class="input" />
+        </div>
+        <div class="form-actions">
+            <button class="btn-save" type="button" @onclick="AddCategoryAsync" disabled="@_isLoading">Add Category</button>
+        </div>
+
+        @if (_categories.Count == 0)
+        {
+            <p class="simple-muted">No categories yet.</p>
+        }
+        else
+        {
+            <div class="table-wrap">
+                <table class="locations-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in _categories)
+                        {
+                            <tr>
+                                <td>
+                                    @if (_editingCategoryId == category.CategoryId)
+                                    {
+                                        <InputText @bind-Value="_editingCategoryName" class="input" />
+                                    }
+                                    else
+                                    {
+                                        @category.Name
+                                    }
+                                </td>
+                                <td>
+                                    @if (_editingCategoryId == category.CategoryId)
+                                    {
+                                        <button class="btn-link" type="button" @onclick="() => SaveCategoryAsync(category.CategoryId)">Save</button>
+                                        <button class="btn-link" type="button" @onclick="CancelEditCategory">Cancel</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn-link" type="button" @onclick="() => StartEditCategory(category)">Edit</button>
+                                        <button class="btn-link-danger" type="button" @onclick="() => DeleteCategoryAsync(category.CategoryId)">Delete</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="form-message">@_message</div>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public AppUser? CurrentUser { get; set; }
+
+    [Parameter]
+    public Group? CurrentGroup { get; set; }
+
+    private readonly List<ItemCategory> _categories = new();
+    private string _newCategoryName = string.Empty;
+    private Guid? _editingCategoryId;
+    private string _editingCategoryName = string.Empty;
+    private bool _isLoading;
+    private string? _message;
+    private Guid? _loadedGroupId;
+
+    protected override void OnInitialized()
+    {
+        AppDataChangeService.Changed += HandleDataChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var currentGroupId = CurrentGroup?.GroupId;
+        if (currentGroupId == _loadedGroupId)
+        {
+            return;
+        }
+
+        _loadedGroupId = currentGroupId;
+        await LoadCategoriesAsync();
+    }
+
+    private void HandleDataChanged(string scope)
+    {
+        if (scope != AppDataScopes.Categories &&
+            scope != AppDataScopes.Household)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            if (_isLoading)
+            {
+                return;
+            }
+
+            await LoadCategoriesAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        if (CurrentGroup is null)
+        {
+            _categories.Clear();
+            _editingCategoryId = null;
+            _editingCategoryName = string.Empty;
+            return;
+        }
+
+        _isLoading = true;
+        try
+        {
+            await SupabaseService.InitializeAsync();
+            var response = await SupabaseService.Client
+                .From<ItemCategory>()
+                .Where(c => c.GroupId == CurrentGroup.GroupId)
+                .Get();
+
+            _categories.Clear();
+            _categories.AddRange((response.Models ?? new List<ItemCategory>())
+                .OrderBy(c => c.Name));
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"Could not load categories: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task AddCategoryAsync()
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        if (CurrentUser is null || CurrentGroup is null)
+        {
+            SetMessage("No user/group context available for category creation.");
+            return;
+        }
+
+        var name = _newCategoryName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            SetMessage("Enter a category name.");
+            return;
+        }
+
+        _isLoading = true;
+        ClearMessage();
+
+        try
+        {
+            var category = new ItemCategory
+            {
+                CategoryId = Guid.NewGuid(),
+                GroupId = CurrentGroup.GroupId,
+                Name = name,
+                CreatedByUser = CurrentUser.UserId,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await SupabaseService.Client
+                .From<ItemCategory>()
+                .Insert(category);
+
+            _newCategoryName = string.Empty;
+            await LoadCategoriesAsync();
+            SetMessage("Category added.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Categories);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"Could not add category: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void StartEditCategory(ItemCategory category)
+    {
+        _editingCategoryId = category.CategoryId;
+        _editingCategoryName = category.Name ?? string.Empty;
+        ClearMessage();
+    }
+
+    private void CancelEditCategory()
+    {
+        _editingCategoryId = null;
+        _editingCategoryName = string.Empty;
+    }
+
+    private async Task SaveCategoryAsync(Guid categoryId)
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        var newName = _editingCategoryName.Trim();
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            SetMessage("Category name cannot be empty.");
+            return;
+        }
+
+        _isLoading = true;
+        ClearMessage();
+
+        try
+        {
+            await SupabaseService.Client
+                .From<ItemCategory>()
+                .Where(c => c.CategoryId == categoryId)
+                .Set(c => c.Name!, newName)
+                .Update();
+
+            _editingCategoryId = null;
+            _editingCategoryName = string.Empty;
+            await LoadCategoriesAsync();
+            SetMessage("Category updated.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Categories);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"Could not update category: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task DeleteCategoryAsync(Guid categoryId)
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        _isLoading = true;
+        ClearMessage();
+
+        try
+        {
+            await SupabaseService.Client
+                .From<ItemCategory>()
+                .Where(c => c.CategoryId == categoryId)
+                .Delete();
+
+            if (_editingCategoryId == categoryId)
+            {
+                _editingCategoryId = null;
+                _editingCategoryName = string.Empty;
+            }
+
+            await LoadCategoriesAsync();
+            SetMessage("Category deleted.");
+            AppDataChangeService.NotifyChanged(AppDataScopes.Categories);
+        }
+        catch (Exception ex)
+        {
+            SetMessage($"Could not delete category: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SetMessage(string text)
+    {
+        _message = text;
+    }
+
+    private void ClearMessage()
+    {
+        _message = null;
+    }
+
+    public void Dispose()
+    {
+        AppDataChangeService.Changed -= HandleDataChanged;
+    }
+}

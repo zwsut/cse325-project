@@ -98,9 +98,7 @@
 </section>
 
 @code {
-    private sealed record InventoryItem(string Id, string Name, string Amount, string Category, string Description);
-
-    private IReadOnlyList<InventoryItem> PantryItems { get; } = new List<InventoryItem>
+    private IReadOnlyList<InventoryDisplayItem> PantryItems { get; } = new List<InventoryDisplayItem>
     {
         new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
         new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
@@ -112,7 +110,7 @@
         new("063", "Mini-Muffins", "1 box", "Treat", "Lorem ipsum dolor sit amet consectetur."),
     };
 
-    private IReadOnlyList<InventoryItem> FoodStorageItems { get; } = new List<InventoryItem>
+    private IReadOnlyList<InventoryDisplayItem> FoodStorageItems { get; } = new List<InventoryDisplayItem>
     {
         new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
         new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),

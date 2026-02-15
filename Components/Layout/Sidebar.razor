@@ -1,62 +1,231 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using System.Security.Claims
+@using cse325_project.Services
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject IAppDataChangeService AppDataChangeService
+@inject AuthenticationStateProvider AuthStateProvider
+
 <div class="sidebar-wrap">
-    <a class="brand" href="/">
-        <div class="brand-mark" aria-hidden="true"></div>
-        <div class="brand-text">
-            <div class="brand-title">Kitchen Inventory</div>
-            <div class="brand-subtitle">Tracking System</div>
+    <div class="sidebar-header">
+        <a class="brand" href="/">
+            <div class="brand-mark" aria-hidden="true"></div>
+            <div class="brand-text">
+                <div class="brand-title">Kitchen Inventory</div>
+                <div class="brand-subtitle">Tracking System</div>
+            </div>
+        </a>
+        <br>
+        <NavLink class="primary-action" href="/items/new" Match="NavLinkMatch.All">
+            <span class="plus" aria-hidden="true">+</span>
+            <span>New Item</span>
+        </NavLink>
+    </div>
+
+    <div class="sidebar-main">
+
+
+        <div class="section">
+            <div class="section-title">Tools</div>
+            <nav class="menu">
+                <NavLink class="menu-item" href="/shopping-list">Shopping List</NavLink>
+                @* <NavLink class="menu-item" href="/categories">Categories</NavLink> *@
+            </nav>
         </div>
-    </a>
 
-    <NavLink class="primary-action" href="/items/new" Match="NavLinkMatch.All">
-        <span class="plus" aria-hidden="true">+</span>
-        <span>New Item</span>
-    </NavLink>
-
-    <div class="section">
-        <div class="section-title">Tools</div>
-        <nav class="menu">
-            <NavLink class="menu-item" href="/shopping-list">Shopping List</NavLink>
-            <NavLink class="menu-item" href="/categories">Categories</NavLink>
-        </nav>
-    </div>
-
-    <div class="section">
-        <div class="section-title row">
-            <span>Inventory</span>
-            <a class="section-action" href="/inventory/edit">Edit</a>
+        <div class="section">
+            <div class="section-title row">
+                <span>Inventory</span>
+                <a class="section-action" href="/inventory/edit">Edit</a>
+            </div>
+            <nav class="menu">
+                <NavLink class="menu-item" href="/" Match="NavLinkMatch.All">All</NavLink>
+            </nav>
         </div>
-        <nav class="menu">
-            <NavLink class="menu-item" href="/" Match="NavLinkMatch.All">All</NavLink>
-        </nav>
+
+        @if (_inventorySections.Count > 0)
+        {
+            @foreach (var pantrySection in _inventorySections)
+            {
+                <div class="section">
+                    <div class="section-title">@pantrySection.PantryName</div>
+                    <nav class="menu">
+                        @foreach (var location in pantrySection.Locations)
+                        {
+                            <NavLink class="menu-item" href="@($"/inventory/{location.Slug}")">@location.Name
+                                @if (!string.IsNullOrWhiteSpace(location.Notes))
+                                {
+                                    <div class="menu-label">@location.Notes</div>
+                                }
+                            </NavLink>
+                        }
+                    </nav>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="section">
+                <div class="section-title">Inventory</div>
+                <div class="menu">
+                    <div class="menu-label">@_inventoryPlaceholderText</div>
+                </div>
+            </div>
+        }
     </div>
 
-    <div class="section">
-        <div class="section-title">Kitchen</div>
-        <nav class="menu">
-            <NavLink class="menu-item" href="/inventory/pantry">Pantry</NavLink>
-            <NavLink class="menu-item" href="/inventory/fridge">Fridge</NavLink>
-            <NavLink class="menu-item" href="/inventory/freezer">Freezer</NavLink>
-
-            <div class="menu-label">Above Microwave</div>
-            <NavLink class="menu-item" href="/inventory/cupboard-a">Cupboard A</NavLink>
-            <NavLink class="menu-item" href="/inventory/cupboard-b">Cupboard B</NavLink>
-            <NavLink class="menu-item" href="/inventory/cupboard-c">Cupboard C</NavLink>
-        </nav>
-    </div>
-
-    <div class="section">
-        <div class="section-title">Garage</div>
-        <nav class="menu">
-            <NavLink class="menu-item" href="/inventory/garage-freezer">Freezer</NavLink>
-            <NavLink class="menu-item" href="/inventory/food-storage">Food Storage</NavLink>
-        </nav>
-    </div>
 
     <div class="sidebar-footer">
-        <div class="footer-avatar" aria-hidden="true">JS</div>
-        <div class="footer-meta">
-            <div class="footer-name">John Smith</div>
-            <div class="footer-role">Homeowner</div>
-        </div>
+        <NavLink href="/settings" class="footer-btn">
+            <div class="footer-avatar" aria-hidden="true">JS</div>
+            <div class="footer-meta">
+                <div class="footer-name">@_displayname</div>
+                <div class="footer-role">Open Settings</div>
+            </div>
+        </NavLink>
     </div>
 </div>
+
+
+@code
+{
+    private string _displayname = "User Name";
+    private string _inventoryPlaceholderText = "No pantry locations found.";
+    private List<SidebarPantrySection> _inventorySections = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        AppDataChangeService.Changed += HandleDataChanged;
+        await RefreshSidebarDataAsync();
+    }
+
+    private async Task RefreshSidebarDataAsync()
+    {
+        try
+        {
+            await SupabaseService.InitializeAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+            var (user, _) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
+
+            _displayname = user.DisplayName ?? user.Email ?? email ?? _displayname;
+            await LoadSidebarLocationsAsync(user.UserId);
+        }
+        catch (Exception)
+        {
+            _inventoryPlaceholderText = "Unable to load pantry locations.";
+        }
+    }
+
+    private void HandleDataChanged(string scope)
+    {
+        if (scope != AppDataScopes.Profile &&
+            scope != AppDataScopes.Household &&
+            scope != AppDataScopes.Locations)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshSidebarDataAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        AppDataChangeService.Changed -= HandleDataChanged;
+    }
+
+    private async Task LoadSidebarLocationsAsync(Guid userId)
+    {
+        var membershipResponse = await SupabaseService.Client
+            .From<GroupMember>()
+            .Where(m => m.UserId == userId)
+            .Get();
+
+        var groupIds = membershipResponse.Models?
+            .Select(m => m.GroupId)
+            .Distinct()
+            .ToList() ?? new List<Guid>();
+
+        if (groupIds.Count == 0)
+        {
+            _inventoryPlaceholderText = "No household memberships found.";
+            return;
+        }
+
+        var pantryResponses = await Task.WhenAll(groupIds.Select(groupId =>
+            SupabaseService.Client
+                .From<Pantry>()
+                .Where(p => p.GroupId == groupId)
+                .Get()));
+
+        var pantries = pantryResponses
+            .SelectMany(response => response.Models ?? new List<Pantry>())
+            .OrderBy(p => p.Name)
+            .ToList();
+
+        if (pantries.Count == 0)
+        {
+            _inventoryPlaceholderText = "No pantries found.";
+            return;
+        }
+
+        var locationTasks = pantries.Select(async pantry =>
+        {
+            var locationResponse = await SupabaseService.Client
+                .From<PantryLocation>()
+                .Where(location => location.PantryId == pantry.PantryId)
+                .Get();
+
+            var locations = (locationResponse.Models ?? new List<PantryLocation>())
+                .OrderBy(location => location.Name)
+                .Select(location => new SidebarLocationLink(
+                    location.Name ?? "Unnamed Location",
+                    ToSlug(location.Name),
+                    location.Notes))
+                .ToList();
+
+            return new SidebarPantrySection(
+                pantry.Name ?? "Unnamed Pantry",
+                locations);
+        });
+
+        _inventorySections = (await Task.WhenAll(locationTasks))
+            .Where(section => section.Locations.Count > 0)
+            .ToList();
+
+        if (_inventorySections.Count == 0)
+        {
+            _inventoryPlaceholderText = "No pantry locations found.";
+        }
+    }
+
+    private static string ToSlug(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "inventory";
+        }
+
+        var chars = value
+            .Trim()
+            .ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray();
+
+        var normalized = new string(chars);
+        while (normalized.Contains("--"))
+        {
+            normalized = normalized.Replace("--", "-");
+        }
+
+        var slug = normalized.Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? "inventory" : slug;
+    }
+}
