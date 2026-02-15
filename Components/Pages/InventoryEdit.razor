@@ -137,35 +137,6 @@ else
     }
 }
 
-@if (Locations.Any())
-{
-    <h2>Current locations</h2>
-    <table class="locations-table">
-        <thead>
-            <tr>
-                <th>Main</th>
-                <th>Sub</th>
-                <th>Description</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var loc in Locations)
-            {
-                <tr>
-                    <td>@loc.MainLocation</td>
-                    <td>@loc.SubLocation</td>
-                    <td>@loc.Description</td>
-                    <td>
-                        <button class="btn-link" @onclick="() => SelectForEdit(loc)">Edit</button>
-                        <button class="btn-link-danger" @onclick="() => DeleteRow(loc)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
-}
-
 @code {
     private InventoryEditLocationFormModel Model { get; set; } = new();
     private string? Message;

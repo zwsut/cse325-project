@@ -1,4 +1,11 @@
 @page "/inventory/{Location}"
+@using cse325_project.Models.Database
+@using cse325_project.Services
+@using System.Security.Claims
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject AuthenticationStateProvider AuthStateProvider
+
 
 <PageTitle>@Title</PageTitle>
 
@@ -6,6 +13,16 @@
     <h1>@Title</h1>
     <a class="btn-add" href="/items/new">Add Item</a>
 </div>
+
+@if (_loading)
+{
+    <p>Loading items...</p>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="simple-muted">Error: @_error</p>
+}
+
 
 <div class="table-wrap">
     <table class="inv-table">
@@ -78,8 +95,140 @@
 
     private InventoryDisplayItem? Editing;
 
-    private string Title => ToTitle(Location);
-    private IReadOnlyList<InventoryDisplayItem> Items => GetItems(Location);
+    private string _title = "Inventory";
+    private bool _loading = true;
+    private string? _error;
+
+    private List<InventoryDisplayItem> _items = new();
+
+    private string Title => _title;
+    private IReadOnlyList<InventoryDisplayItem> Items => _items;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+        _items = new();
+
+        try
+        {
+            await SupabaseService.InitializeAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+            var (user, group) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
+            if (user is null || group is null)
+            {
+                _error = "You must be logged in.";
+                return;
+            }
+
+            // 1) Load pantries for this user's group
+            var pantryRes = await SupabaseService.Client
+                .From<Pantry>()
+                .Where(p => p.GroupId == group.GroupId)
+                .Get();
+
+            var pantries = pantryRes.Models ?? new List<Pantry>();
+            if (pantries.Count == 0)
+            {
+                _title = "Inventory";
+                _items = new();
+                return;
+            }
+
+            // 2) Load all locations for those pantries
+            var pantryIds = pantries.Select(p => p.PantryId).ToList();
+
+            // Supabase typed client doesn't do IN() super nicely in all versions,
+            // so we query per pantry (same pattern you already use in your sidebar).
+            PantryLocation? matchedLocation = null;
+            Pantry? matchedPantry = null;
+
+            foreach (var pantry in pantries)
+            {
+                var locRes = await SupabaseService.Client
+                    .From<PantryLocation>()
+                    .Where(l => l.PantryId == pantry.PantryId)
+                    .Get();
+
+                var locations = locRes.Models ?? new List<PantryLocation>();
+                matchedLocation = locations.FirstOrDefault(l => ToSlug(l.Name) == (Location ?? "").ToLowerInvariant());
+                if (matchedLocation is not null)
+                {
+                    matchedPantry = pantry;
+                    break;
+                }
+            }
+
+            if (matchedLocation is null || matchedPantry is null)
+            {
+                _title = ToTitle(Location);
+                _items = new();
+                return;
+            }
+
+            _title = $"{matchedPantry.Name} / {matchedLocation.Name}";
+
+            // 3) Query inventory items for this location
+            var invRes = await SupabaseService.Client
+                .From<InventoryItem>()
+                .Where(i => i.LocationId == matchedLocation.LocationId)
+                .Get();
+
+            var invItems = invRes.Models ?? new List<InventoryItem>();
+
+            // 4) Pull catalog for any item_id we have (so we can show names)
+            var itemIds = invItems
+                .Where(i => i.ItemId.HasValue)
+                .Select(i => i.ItemId!.Value)
+                .Distinct()
+                .ToList();
+
+            var catalogMap = new Dictionary<Guid, CatalogItem>();
+            if (itemIds.Count > 0)
+            {
+                // simplest: fetch whole catalog then map (fine for small projects)
+                var catRes = await SupabaseService.Client.From<CatalogItem>().Get();
+                var cat = catRes.Models ?? new List<CatalogItem>();
+                catalogMap = cat.Where(c => itemIds.Contains(c.ItemId))
+                                .ToDictionary(c => c.ItemId, c => c);
+            }
+
+            // 5) Map to your display model
+            _items = invItems
+                .OrderBy(i => i.CreatedAt)
+                .Select(i =>
+                {
+                    var name =
+                        i.CustomName ??
+                        (i.ItemId.HasValue && catalogMap.TryGetValue(i.ItemId.Value, out var c)
+                            ? (string.IsNullOrWhiteSpace(c.Brand) ? c.Name : $"{c.Name} ({c.Brand})")
+                            : "Unnamed");
+
+                    var amount = $"{i.Quantity} {i.Unit}".Trim();
+
+                    return new InventoryDisplayItem(
+                        i.InventoryId.ToString()[..8],  // short id for UI
+                        name,
+                        amount,
+                        "", // category later
+                        i.Notes ?? ""
+                    );
+                })
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
 
     private void StartEdit(InventoryDisplayItem item) => Editing = item;
     private void CloseEdit() => Editing = null;
@@ -94,34 +243,20 @@
             .Aggregate((a, b) => $"{a} {b}");
     }
 
-    private static IReadOnlyList<InventoryDisplayItem> GetItems(string? location)
+    private static string ToSlug(string? value)
     {
-        // Sample data for UI scaffolding (replace with database/service later)
-        return location?.ToLowerInvariant() switch
-        {
-            "pantry" => new List<InventoryDisplayItem>
-            {
-                new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
-                new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
-                new("006", "Chicken Noodle", "5 cans", "Soup", "Lorem ipsum dolor sit amet consectetur."),
-                new("023", "Fruity Pebbles", "2 Boxes", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
-                new("027", "Flour", "5 lbs", "Baking", "Lorem ipsum dolor sit amet consectetur."),
-                new("032", "Sugar", "5 kg", "Baking", "Lorem ipsum dolor sit amet consectetur."),
-                new("056", "Sprite", "2 liters", "Drink", "Lorem ipsum dolor sit amet consectetur."),
-                new("063", "Costco Muffins", "24 Muffins", "Treat", "Lorem ipsum dolor sit amet consectetur."),
-            },
-            "food-storage" => new List<InventoryDisplayItem>
-            {
-                new("101", "Rice", "10 lbs", "Grain", "Lorem ipsum dolor sit amet consectetur."),
-                new("102", "Black Beans", "8 cans", "Canned", "Lorem ipsum dolor sit amet consectetur."),
-                new("103", "Olive Oil", "1 bottle", "Cooking", "Lorem ipsum dolor sit amet consectetur."),
-                new("104", "Pasta", "6 boxes", "Grain", "Lorem ipsum dolor sit amet consectetur."),
-            },
-            _ => new List<InventoryDisplayItem>
-            {
-                new("001", "Whole wheat", "1 Loaf", "Bread", "Lorem ipsum dolor sit amet consectetur."),
-                new("002", "Cheerios", "1 Box", "Cereal", "Lorem ipsum dolor sit amet consectetur."),
-            }
-        };
+        if (string.IsNullOrWhiteSpace(value)) return "inventory";
+
+        var chars = value.Trim().ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray();
+
+        var normalized = new string(chars);
+        while (normalized.Contains("--"))
+            normalized = normalized.Replace("--", "-");
+
+        var slug = normalized.Trim('-');
+        return string.IsNullOrWhiteSpace(slug) ? "inventory" : slug;
     }
 }
+

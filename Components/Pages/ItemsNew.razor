@@ -1,0 +1,360 @@
+@page "/items/new"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using cse325_project.Models.Database
+@using cse325_project.Models
+@using cse325_project.Services
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject IAppDataChangeService AppDataChangeService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+
+<PageTitle>Add Item</PageTitle>
+
+<h1 class="simple-title">Add Item</h1>
+<p class="simple-muted">Add an item to your pantry and (if needed) save it to the shared catalog.</p>
+
+@if (_isLoading)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="form-wrap">
+        <EditForm Model="_model" OnValidSubmit="SaveAsync">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="form-row">
+                <label>Pantry</label>
+                <InputSelect class="input" @bind-Value="_model.PantryId">
+                    <option value="">Select a pantry...</option>
+                    @foreach (var p in _pantries)
+                    {
+                        <option value="@p.PantryId">@p.Name</option>
+                    }
+                </InputSelect>
+                <ValidationMessage For="() => _model.PantryId" />
+            </div>
+
+            <div class="form-row">
+                <label>Container (optional)</label>
+                <InputSelect class="input" @bind-Value="_model.LocationId">
+                    <option value="">(none)</option>
+                    @foreach (var l in _locations)
+                    {
+                        <option value="@l.LocationId">@l.Name</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="form-row">
+                <label>Pick from catalog</label>
+                <InputSelect class="input" @bind-Value="_model.SelectedCatalogItemId">
+                    <option value="">(create new)</option>
+                    @foreach (var c in _catalog)
+                    {
+                        <option value="@c.ItemId">@FormatCatalog(c)</option>
+                    }
+                </InputSelect>
+            </div>
+
+            @if (_model.SelectedCatalogItemId is null)
+            {
+                <div class="form-row">
+                    <label>Item name</label>
+                    <InputText class="input" @bind-Value="_model.NewCatalogName" />
+                </div>
+
+                <div class="form-row">
+                    <label>Brand (optional)</label>
+                    <InputText class="input" @bind-Value="_model.NewCatalogBrand" />
+                </div>
+
+                <div class="form-row">
+                    <label>Default unit (optional)</label>
+                    <InputText class="input" @bind-Value="_model.NewCatalogDefaultUnit" />
+                </div>
+
+                <div class="form-row">
+                    <label>Description (optional)</label>
+                    <InputTextArea class="input" @bind-Value="_model.NewCatalogDescription" />
+                </div>
+
+                <div class="form-row">
+                    <label>Barcode (optional)</label>
+                    <InputText class="input" @bind-Value="_model.NewCatalogBarcode" />
+                </div>
+            }
+
+            <div class="form-row">
+                <label>Quantity</label>
+                <InputNumber class="input" @bind-Value="_model.Quantity" />
+                <ValidationMessage For="() => _model.Quantity" />
+            </div>
+
+            <div class="form-row">
+                <label>Unit</label>
+                <InputText class="input" @bind-Value="_model.Unit" />
+                <ValidationMessage For="() => _model.Unit" />
+            </div>
+
+            <div class="form-row">
+                <label>Expires on (optional)</label>
+                <InputDate class="input" @bind-Value="_model.ExpiresOn" />
+            </div>
+
+            <div class="form-row">
+                <label>Notes (optional)</label>
+                <InputTextArea class="input" @bind-Value="_model.Notes" />
+            </div>
+
+            <div class="form-actions">
+                <button class="btn-save" type="submit" disabled="@_isBusy">Add Item</button>
+                <button class="btn-cancel" type="button" @onclick="Cancel" disabled="@_isBusy">Cancel</button>
+            </div>
+        </EditForm>
+
+        @if (!string.IsNullOrWhiteSpace(_successMessage))
+        {
+            <div class="form-message success">@_successMessage</div>
+        }
+
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="form-message">@_message</div>
+        }
+    </div>
+}
+
+@code {
+    private string? _successMessage;
+
+    private bool _isLoading = true;
+    private bool _isBusy;
+    private string? _message;
+
+    private AppUser? _currentUser;
+    private Group? _currentGroup;
+
+    private AddItemModel _model = new();
+
+    private List<Pantry> _pantries = new();
+    private List<PantryLocation> _locations = new();
+    private List<CatalogItem> _catalog = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await SupabaseService.InitializeAsync();
+
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var emailClaim = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+            (_currentUser, _currentGroup) = await UserContextService.GetForClaimsAsync(userIdClaim, emailClaim);
+
+            if (_currentGroup is null || _currentUser is null)
+            {
+                _message = "You must be logged in.";
+                return;
+            }
+
+            await LoadPantriesAsync();
+            await LoadCatalogAsync();
+
+            if (_pantries.Count > 0)
+            {
+                _model.PantryId = _pantries[0].PantryId;
+                await LoadLocationsAsync(_model.PantryId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadPantriesAsync()
+    {
+        var res = await SupabaseService.Client
+            .From<Pantry>()
+            .Where(p => p.GroupId == _currentGroup!.GroupId)
+            .Get();
+
+        _pantries = (res.Models ?? new()).OrderBy(p => p.Name).ToList();
+    }
+
+    private async Task LoadLocationsAsync(Guid pantryId)
+    {
+        var res = await SupabaseService.Client
+            .From<PantryLocation>()
+            .Where(l => l.PantryId == pantryId)
+            .Get();
+
+        _locations = (res.Models ?? new()).OrderBy(l => l.Name).ToList();
+    }
+
+    private async Task LoadCatalogAsync()
+    {
+        var res = await SupabaseService.Client.From<CatalogItem>().Get();
+        _catalog = (res.Models ?? new()).OrderBy(c => c.Name).ToList();
+    }
+
+    private static string FormatCatalog(CatalogItem c)
+        => string.IsNullOrWhiteSpace(c.Brand) ? c.Name : $"{c.Name} ({c.Brand})";
+
+    private async Task SaveAsync()
+    {
+        if (_isBusy || _currentUser is null || _currentGroup is null)
+            return;
+
+        _isBusy = true;
+        _message = null;
+
+        try
+        {
+            // refresh locations for selected pantry
+            await LoadLocationsAsync(_model.PantryId);
+
+            // 1) determine catalog item id
+            Guid catalogItemId;
+            if (_model.SelectedCatalogItemId is not null)
+            {
+                catalogItemId = _model.SelectedCatalogItemId.Value;
+            }
+            else
+            {
+                var name = (_model.NewCatalogName ?? "").Trim();
+                var brand = string.IsNullOrWhiteSpace(_model.NewCatalogBrand) ? null : _model.NewCatalogBrand.Trim();
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    _message = "Enter an item name or select an existing catalog item.";
+                    return;
+                }
+
+                var existing = await FindCatalogItemAsync(name, brand);
+                if (existing is not null)
+                {
+                    catalogItemId = existing.ItemId;
+                }
+                else
+                {
+                    var inserted = await SupabaseService.Client
+                        .From<CatalogItem>()
+                        .Insert(new CatalogItem
+                        {
+                            ItemId = Guid.NewGuid(),
+                            Name = name,
+                            Brand = brand,
+                            Description = string.IsNullOrWhiteSpace(_model.NewCatalogDescription) ? null : _model.NewCatalogDescription.Trim(),
+                            DefaultUnit = string.IsNullOrWhiteSpace(_model.NewCatalogDefaultUnit) ? null : _model.NewCatalogDefaultUnit.Trim(),
+                            Barcode = string.IsNullOrWhiteSpace(_model.NewCatalogBarcode) ? null : _model.NewCatalogBarcode.Trim(),
+                            CategoryId = null
+                        });
+
+                    var created = inserted.Models.FirstOrDefault();
+                    if (created is null)
+                    {
+                        _message = "Catalog insert failed.";
+                        return;
+                    }
+
+                    catalogItemId = created.ItemId;
+                }
+            }
+
+            // 2) insert inventory item
+            var inv = new InventoryItem
+            {
+                InventoryId = Guid.NewGuid(),
+                PantryId = _model.PantryId,
+                LocationId = _model.LocationId,
+                ItemId = catalogItemId,
+                CustomName = null, // catalog-backed
+                Quantity = _model.Quantity <= 0 ? 1 : _model.Quantity,
+                Unit = (_model.Unit ?? "each").Trim(),
+                ExpiresOn = _model.ExpiresOn,
+                Notes = string.IsNullOrWhiteSpace(_model.Notes) ? null : _model.Notes.Trim(),
+                CreatedByUser = _currentUser.UserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            await SupabaseService.Client.From<InventoryItem>().Insert(inv);
+            _successMessage = "Item added successfully.";
+            _message = null;
+            _model = new AddItemModel();
+
+
+            AppDataChangeService.NotifyChanged(AppDataScopes.Locations);
+            Nav.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error adding item: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task<CatalogItem?> FindCatalogItemAsync(string name, string? brand)
+    {
+        // brand can be null, so handle both cases.
+        var q = SupabaseService.Client.From<CatalogItem>()
+            .Where(i => i.Name == name);
+
+        if (brand is null)
+        {
+            // Postgrest "is null" filtering isn't expressible with this typed Where easily in all versions,
+            // so we'll filter client-side after fetching name matches.
+            var res = await q.Get();
+            return res.Models.FirstOrDefault(i => i.Brand is null);
+        }
+        else
+        {
+            var res = await q.Get();
+            return res.Models.FirstOrDefault(i => string.Equals(i.Brand, brand, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private void Cancel() => Nav.NavigateTo("/items/new");
+
+    private sealed class AddItemModel
+    {
+        [Required]
+        public Guid PantryId { get; set; }
+
+        public Guid? LocationId { get; set; }
+
+        // Choose existing catalog item
+        public Guid? SelectedCatalogItemId { get; set; }
+
+        // Or create a new one
+        public string? NewCatalogName { get; set; }
+        public string? NewCatalogBrand { get; set; }
+        public string? NewCatalogDefaultUnit { get; set; }
+        public string? NewCatalogDescription { get; set; }
+        public string? NewCatalogBarcode { get; set; }
+
+        [Range(0.0001, 999999)]
+        public decimal Quantity { get; set; } = 1;
+
+        [Required]
+        public string Unit { get; set; } = "each";
+
+        public DateOnly? ExpiresOn { get; set; }
+
+        public string? Notes { get; set; }
+    }
+}
