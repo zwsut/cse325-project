@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace cse325_project.Services
@@ -11,8 +12,8 @@ namespace cse325_project.Services
         public InventoryService()
         {
             // seed sample data
-            var a = new InventoryLocationDto { Id = "loc1", Name = "Pantry", Slug = "pantry", Description = "Home pantry" };
-            var b = new InventoryLocationDto { Id = "loc2", Name = "Food Storage", Slug = "food-storage", Description = "Long term" };
+            var a = new InventoryLocationDto { Id = "loc1", MainLocation = "Home", SubLocation = "Pantry", Name = "Pantry", Slug = "pantry", Description = "Home pantry" };
+            var b = new InventoryLocationDto { Id = "loc2", MainLocation = "Home", SubLocation = "Food Storage", Name = "Food Storage", Slug = "food-storage", Description = "Long term" };
             _locations[a.Id] = a;
             _locations[b.Id] = b;
         }
