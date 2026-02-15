@@ -23,6 +23,11 @@ else if (_pantrySections.Count == 0)
 }
 else
 {
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <div class="form-message">@_message</div>
+    }
+
     @foreach (var pantry in _pantrySections)
     {
         <div class="page-head">
@@ -39,7 +44,6 @@ else
                 <table class="inv-table">
                     <thead>
                         <tr>
-                            <th class="col-id">ID</th>
                             <th>Item Name</th>
                             <th>Amount</th>
                             <th>Container</th>
@@ -51,7 +55,7 @@ else
                         @if (pantry.Items.Count == 0)
                         {
                             <tr>
-                                <td colspan="6" class="desc">No items in this pantry yet.</td>
+                                <td colspan="5" class="desc">No items in this pantry yet.</td>
                             </tr>
                         }
                         else
@@ -59,15 +63,27 @@ else
                             @foreach (var item in pantry.Items)
                             {
                                 <tr>
-                                    <td class="id">@item.Id</td>
                                     <td>@item.Name</td>
                                     <td>@item.Amount</td>
                                     <td>@item.Container</td>
                                     <td class="desc">@item.Description</td>
                                     <td class="actions">
-                                        @* later: hook edit/delete *@
+                                        <button class="icon-btn"
+                                                type="button"
+                                                title="Add to shopping list"
+                                                aria-label="Add to shopping list"
+                                                @onclick="() => AddToShoppingListAsync(item)"
+                                                disabled="@_busy">🛒</button>
+
                                         <a class="icon-btn" href="@item.EditHref" title="View" aria-label="View">✎</a>
-                                        <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete">🗑</button>
+
+                                        <button class="icon-btn danger"
+                                                type="button"
+                                                title="Delete"
+                                                aria-label="Delete"
+                                                @onclick="() => DeleteInventoryItemAsync(item)"
+                                                disabled="@_busy">🗑</button>
+
                                     </td>
                                 </tr>
                             }
@@ -83,7 +99,13 @@ else
 
 @code {
     private bool _loading = true;
+    private bool _busy;
     private string? _error;
+    private string? _message;
+
+    private AppUser? _currentUser;
+    private Group? _currentGroup;
+    private AppList? _shoppingList;
 
     private List<PantrySectionVm> _pantrySections = new();
 
@@ -97,17 +119,20 @@ else
             var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
 
-            var (user, group) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
-            if (user is null || group is null)
+            (_currentUser, _currentGroup) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
+            if (_currentUser is null || _currentGroup is null)
             {
                 _error = "You must be logged in.";
                 return;
             }
 
+            // Create/Get shopping list once for quick "Add to shopping list"
+            _shoppingList = await GetOrCreateShoppingListAsync(_currentGroup.GroupId, _currentUser.UserId);
+
             // 1) pantries for this user's group
             var pantryRes = await SupabaseService.Client
                 .From<Pantry>()
-                .Where(p => p.GroupId == group.GroupId)
+                .Where(p => p.GroupId == _currentGroup.GroupId)
                 .Get();
 
             var pantries = (pantryRes.Models ?? new List<Pantry>())
@@ -138,7 +163,6 @@ else
             }
 
             // 3) load inventory items per pantry, map catalog names
-            // (simple approach: get catalog once)
             var catalogRes = await SupabaseService.Client.From<CatalogItem>().Get();
             var catalog = (catalogRes.Models ?? new List<CatalogItem>())
                 .ToDictionary(c => c.ItemId, c => c);
@@ -170,13 +194,15 @@ else
                             ? loc.Name
                             : "(no container)";
 
-                        // link to inventory/{slug} if we know container slug, else fallback to inventory/edit
                         var editHref = i.LocationId.HasValue && locationMap.TryGetValue(i.LocationId.Value, out var loc2)
                             ? $"/inventory/{loc2.Slug}"
                             : "/inventory/edit";
 
                         return new InventoryRowVm(
-                            i.InventoryId.ToString()[..8],
+                            i.InventoryId,
+                            i.ItemId,
+                            i.CustomName,
+                            i.Unit,
                             displayName,
                             amount,
                             container,
@@ -201,6 +227,85 @@ else
         }
     }
 
+    private async Task AddToShoppingListAsync(InventoryRowVm inv)
+    {
+        if (_busy || _currentUser is null || _currentGroup is null) return;
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            // Ensure list exists (in case something changed)
+            _shoppingList ??= await GetOrCreateShoppingListAsync(_currentGroup.GroupId, _currentUser.UserId);
+
+            // Shopping list item: prefer catalog ItemId, else custom name
+            var itemId = inv.ItemId;
+            var customName = itemId is null ? (inv.CustomName ?? inv.Name).Trim() : null;
+
+            if (itemId is null && string.IsNullOrWhiteSpace(customName))
+            {
+                _message = "Can't add: item has no name.";
+                return;
+            }
+
+            var unit = string.IsNullOrWhiteSpace(inv.Unit) ? null : inv.Unit.Trim();
+
+            await SupabaseService.Client
+                .From<AppListItem>()
+                .Insert(new AppListItem
+                {
+                    ListItemId = Guid.NewGuid(),
+                    ListId = _shoppingList!.ListId,
+                    ItemId = itemId,
+                    CustomName = customName,
+                    Quantity = 1,              // default for shopping list
+                    Unit = unit,               // copy unit if present
+                    IsChecked = false,
+                    AddedByUser = _currentUser.UserId,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+            _message = "Added to shopping list.";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error adding to shopping list: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task<AppList> GetOrCreateShoppingListAsync(Guid groupId, Guid userId)
+    {
+        var res = await SupabaseService.Client
+            .From<AppList>()
+            .Where(l => l.GroupId == groupId)
+            .Get();
+
+        var existing = (res.Models ?? new List<AppList>())
+            .FirstOrDefault(l => string.Equals(l.ListType, "shopping", StringComparison.OrdinalIgnoreCase)
+                              && l.ArchivedAt == null);
+
+        if (existing is not null) return existing;
+
+        var inserted = await SupabaseService.Client
+            .From<AppList>()
+            .Insert(new AppList
+            {
+                ListId = Guid.NewGuid(),
+                GroupId = groupId,
+                Name = "Shopping List",
+                ListType = "shopping",
+                CreatedByUser = userId,
+                CreatedAt = DateTime.UtcNow,
+                ArchivedAt = null
+            });
+
+        return inserted.Models.First();
+    }
+
     private static string ToSlug(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return "inventory";
@@ -218,11 +323,47 @@ else
     private sealed record PantrySectionVm(string PantryName, List<InventoryRowVm> Items);
 
     private sealed record InventoryRowVm(
-        string Id,
+        Guid InventoryId,
+        Guid? ItemId,
+        string? CustomName,
+        string? Unit,
         string Name,
         string Amount,
         string Container,
         string Description,
         string EditHref
     );
+
+    private async Task DeleteInventoryItemAsync(InventoryRowVm inv)
+    {
+        if (_busy) return;
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            // Delete the inventory row by primary key
+            await SupabaseService.Client
+                .From<InventoryItem>()
+                .Where(i => i.InventoryId == inv.InventoryId)
+                .Delete();
+
+            // Update UI: remove from the in-memory list
+            foreach (var section in _pantrySections)
+            {
+                var removed = section.Items.RemoveAll(x => x.InventoryId == inv.InventoryId);
+                if (removed > 0) break;
+            }
+
+            _message = "Deleted.";
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error deleting item: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
 }
