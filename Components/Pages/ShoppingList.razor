@@ -1,139 +1,98 @@
-@page "/ShoppingList"
+@page "/shopping-list"
 @using System.Security.Claims
-@using cse325_project.Models
+@using cse325_project.Models.Database
 @using cse325_project.Services
-@inject ShoppingListService Shopping
-@inject IHttpContextAccessor HttpContextAccessor
+@inject ISupabaseService SupabaseService
+@inject IUserContextService UserContextService
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Shopping List</PageTitle>
 
-<div class="page-head">
-    <h1 class="page-title">Shopping</h1>
-</div>
+<h1 class="simple-title">Shopping List</h1>
+<p class="simple-muted">View your list, check items off, edit quantities, and remove items.</p>
 
-<section class="inv-section">
-    <div class="section-head">
-        <h2>@(listName ?? "Weekly Shopping")</h2>
-        <button class="btn-add" type="button" @onclick="() => showAdd = !showAdd">
-            @(showAdd ? "Close" : "Add Item")
-        </button>
-    </div>
-
-    @if (!string.IsNullOrWhiteSpace(error))
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <p class="simple-muted">Error: @_error</p>
+}
+else if (_list is null || _currentUser is null || _currentGroup is null)
+{
+    <p class="simple-muted">You must be logged in.</p>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(_message))
     {
-        <p style="color:#b42318;font-weight:800;">@error</p>
-    }
-
-    @if (showAdd)
-    {
-        <div class="table-wrap" style="padding:14px; margin-bottom:16px;">
-            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
-                <div style="min-width:260px;">
-                    <label style="font-weight:900;">Catalog item</label>
-                    <select @bind="selectedCatalogId" style="width:100%; padding:10px; border-radius:10px;">
-                        <option value="">-- select --</option>
-                        @foreach (var kv in catalogMap.OrderBy(k => k.Value.Name))
-                        {
-                            <option value="@kv.Key">
-                                @kv.Value.Name @(string.IsNullOrWhiteSpace(kv.Value.Brand) ? "" : $"({kv.Value.Brand})")
-                            </option>
-                        }
-                    </select>
-                </div>
-
-                <div style="width:120px;">
-                    <label style="font-weight:900;">Qty</label>
-                    <input type="number" step="0.001" @bind="addQty" style="width:100%; padding:10px; border-radius:10px;" />
-                </div>
-
-                <div style="width:160px;">
-                    <label style="font-weight:900;">Unit</label>
-                    <input @bind="addUnit" style="width:100%; padding:10px; border-radius:10px;" />
-                </div>
-
-                <button class="btn-add" type="button" @onclick="AddFromCatalog" disabled="@(!Guid.TryParse(selectedCatalogId, out _))">
-                    Add
-                </button>
-            </div>
-
-            <hr style="opacity:.25; margin:14px 0;" />
-
-            <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
-                <div style="min-width:260px; flex:1;">
-                    <label style="font-weight:900;">Custom item</label>
-                    <input @bind="customName" placeholder="e.g. Pickles" style="width:100%; padding:10px; border-radius:10px;" />
-                </div>
-
-                <div style="width:120px;">
-                    <label style="font-weight:900;">Qty</label>
-                    <input type="number" step="0.001" @bind="addQty" style="width:100%; padding:10px; border-radius:10px;" />
-                </div>
-
-                <div style="width:160px;">
-                    <label style="font-weight:900;">Unit</label>
-                    <input @bind="addUnit" style="width:100%; padding:10px; border-radius:10px;" />
-                </div>
-
-                <button class="btn-add" type="button" @onclick="AddCustom" disabled="@string.IsNullOrWhiteSpace(customName)">
-                    Add
-                </button>
-            </div>
-        </div>
+        <div class="form-message">@_message</div>
     }
 
     <div class="table-wrap">
         <table class="inv-table">
             <thead>
                 <tr>
-                    <th style="width:80px;">Done</th>
-                    <th>Item Name</th>
-                    <th style="width:140px;">Amount</th>
-                    <th style="width:160px;">Unit</th>
+                    <th style="width: 70px;">Done</th>
+                    <th>Item</th>
+                    <th style="width: 140px;">Qty</th>
+                    <th style="width: 140px;">Unit</th>
                     <th class="col-actions">Actions</th>
                 </tr>
             </thead>
             <tbody>
-                @if (isLoading)
+                @if (_items.Count == 0)
                 {
-                    <tr><td colspan="5" style="padding:16px;">Loading…</td></tr>
-                }
-                else if (items.Count == 0)
-                {
-                    <tr><td colspan="5" style="padding:16px;">No items yet.</td></tr>
+                    <tr>
+                        <td colspan="5" class="desc">No items yet.</td>
+                    </tr>
                 }
                 else
                 {
-                    @foreach (var row in items)
+                    @foreach (var row in _items)
                     {
                         <tr>
                             <td>
-                                <input type="checkbox" checked="@row.IsChecked" @onchange="async _ => await Toggle(row)" />
+                                <input type="checkbox"
+                                       checked="@row.IsChecked"
+                                       @onchange="async _ => await ToggleCheckedAsync(row)"
+                                       disabled="@_busy" />
                             </td>
 
-                            <td class="desc">
-                                <span style="font-weight:900; @(row.IsChecked ? "text-decoration:line-through;opacity:.7;" : "")">
-                                    @GetItemName(row)
-                                </span>
+                            <td>@GetRowName(row)</td>
+
+                            <td>
+                                <input class="input" style="max-width:120px;"
+                                    type="number" step="0.0001" min="0"
+                                    value="@GetEditQty(row.ListItemId)"
+                                    @onchange="e => SetEditQty(row.ListItemId, e.Value)"
+                                    disabled="@_busy" />
                             </td>
 
                             <td>
-                                <input type="number" step="0.001"
-                                       value="@row.Quantity"
-                                       @onchange="async e => await UpdateQty(row, e.Value?.ToString())"
-                                       style="width:100%; padding:8px; border-radius:10px;" />
+                                <input class="input" style="max-width:120px;"
+                                    type="text"
+                                    value="@GetEditUnit(row.ListItemId)"
+                                    @onchange="e => SetEditUnit(row.ListItemId, e.Value)"
+                                    disabled="@_busy" />
                             </td>
 
-                            <td>
-                                <input value="@row.Unit"
-                                       @onchange="async e => await UpdateUnit(row, e.Value?.ToString())"
-                                       style="width:100%; padding:8px; border-radius:10px;" />
-                            </td>
 
                             <td class="actions">
-                                <button class="icon-btn danger" type="button" title="Delete" aria-label="Delete"
-                                        @onclick="async () => await Remove(row)">
-                                    🗑
-                                </button>
+                                <button class="icon-btn"
+                                        type="button"
+                                        title="Save"
+                                        aria-label="Save"
+                                        @onclick="() => SaveRowAsync(row)"
+                                        disabled="@_busy">💾</button>
+
+                                <button class="icon-btn danger"
+                                        type="button"
+                                        title="Delete"
+                                        aria-label="Delete"
+                                        @onclick="() => DeleteAsync(row)"
+                                        disabled="@_busy">🗑</button>
                             </td>
                         </tr>
                     }
@@ -141,147 +100,233 @@
             </tbody>
         </table>
     </div>
-</section>
+}
 
 @code {
-    bool isLoading = true;
-    bool showAdd = false;
-    string? error;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _message;
 
-    Guid? groupId;
-    Guid? listId;
-    string? listName;
+    private AppUser? _currentUser;
+    private Group? _currentGroup;
+    private AppList? _list;
 
-    List<ListItemRow> items = new();
-    Dictionary<Guid, ItemCatalogRow> catalogMap = new();
+    private List<AppListItem> _items = new();
+    private List<CatalogItem> _catalog = new();
+    private Dictionary<Guid, CatalogItem> _catalogMap = new();
 
-    string? selectedCatalogId;
-    decimal addQty = 1;
-    string? addUnit;
-    string? customName;
+    // Inline edit buffers
+    private readonly Dictionary<Guid, decimal> _editQty = new();
+    private readonly Dictionary<Guid, string?> _editUnit = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAsync();
-    }
-
-    Guid? GetUserId()
-    {
-        var httpUser = HttpContextAccessor.HttpContext?.User;
-        var id = httpUser?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.TryParse(id, out var g) ? g : null;
-    }
-
-    async Task LoadAsync()
-    {
         try
         {
-            isLoading = true;
-            error = null;
+            await SupabaseService.InitializeAsync();
 
-            var userId = GetUserId();
-            if (userId is null)
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userIdClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = authState.User.FindFirst(ClaimTypes.Email)?.Value;
+
+            (_currentUser, _currentGroup) = await UserContextService.GetForClaimsAsync(userIdClaim, email);
+            if (_currentUser is null || _currentGroup is null)
             {
-                error = "You must be logged in.";
+                _error = "You must be logged in.";
                 return;
             }
 
-            groupId = await Shopping.GetUserGroupIdAsync(userId.Value);
-            if (groupId is null)
-            {
-                error = "No group found for your user yet. Make sure signup/login init creates one group + membership.";
-                return;
-            }
-
-            var list = await Shopping.GetOrCreateShoppingListAsync(groupId.Value, userId.Value);
-            if (list is null)
-            {
-                error = "Could not load/create shopping list.";
-                return;
-            }
-
-            listId = list.ListId;
-            listName = list.Name;
-
-            catalogMap = await Shopping.GetCatalogMapAsync();
-            items = await Shopping.GetItemsAsync(listId.Value);
+            await LoadCatalogAsync();
+            _list = await GetOrCreateShoppingListAsync(_currentGroup.GroupId, _currentUser.UserId);
+            await RefreshItemsAsync();
         }
         catch (Exception ex)
         {
-            error = ex.Message;
+            _error = ex.Message;
         }
         finally
         {
-            isLoading = false;
+            _loading = false;
         }
     }
 
-    string GetItemName(ListItemRow row)
+    private async Task LoadCatalogAsync()
     {
-        if (!string.IsNullOrWhiteSpace(row.CustomName)) return row.CustomName!;
-        if (row.ItemId is Guid id && catalogMap.TryGetValue(id, out var cat)) return cat.Name;
-        return "(unknown)";
+        var res = await SupabaseService.Client.From<CatalogItem>().Get();
+        _catalog = (res.Models ?? new List<CatalogItem>()).OrderBy(c => c.Name).ToList();
+        _catalogMap = _catalog.ToDictionary(c => c.ItemId, c => c);
     }
 
-    async Task AddFromCatalog()
+    private async Task<AppList> GetOrCreateShoppingListAsync(Guid groupId, Guid userId)
     {
-        if (listId is null) return;
-        var userId = GetUserId();
-        if (userId is null) return;
-        if (!Guid.TryParse(selectedCatalogId, out var itemId)) return;
+        var res = await SupabaseService.Client
+            .From<AppList>()
+            .Where(l => l.GroupId == groupId)
+            .Get();
 
-        // If unit left blank, use default unit from catalog if available
-        var unit = string.IsNullOrWhiteSpace(addUnit) && catalogMap.TryGetValue(itemId, out var cat)
-            ? cat.DefaultUnit
-            : addUnit;
+        var existing = (res.Models ?? new List<AppList>())
+            .FirstOrDefault(l => string.Equals(l.ListType, "shopping", StringComparison.OrdinalIgnoreCase)
+                              && l.ArchivedAt == null);
 
-        await Shopping.AddCatalogAsync(listId.Value, userId.Value, itemId, addQty, unit);
-        items = await Shopping.GetItemsAsync(listId.Value);
+        if (existing is not null) return existing;
 
-        selectedCatalogId = null;
-        customName = null;
-        addQty = 1;
-        addUnit = null;
+        var inserted = await SupabaseService.Client
+            .From<AppList>()
+            .Insert(new AppList
+            {
+                ListId = Guid.NewGuid(),
+                GroupId = groupId,
+                Name = "Shopping List",
+                ListType = "shopping",
+                CreatedByUser = userId,
+                CreatedAt = DateTime.UtcNow,
+                ArchivedAt = null
+            });
+
+        return inserted.Models.First();
     }
 
-    async Task AddCustom()
+    private async Task RefreshItemsAsync()
     {
-        if (listId is null) return;
-        var userId = GetUserId();
-        if (userId is null) return;
-        if (string.IsNullOrWhiteSpace(customName)) return;
+        if (_list is null) return;
 
-        await Shopping.AddCustomAsync(listId.Value, userId.Value, customName, addQty, addUnit);
-        items = await Shopping.GetItemsAsync(listId.Value);
+        var res = await SupabaseService.Client
+            .From<AppListItem>()
+            .Where(i => i.ListId == _list.ListId)
+            .Get();
 
-        selectedCatalogId = null;
-        customName = null;
-        addQty = 1;
-        addUnit = null;
+        _items = (res.Models ?? new List<AppListItem>())
+            .OrderBy(i => i.IsChecked)
+            .ThenBy(i => i.CustomName ?? "")
+            .ThenBy(i => i.CreatedAt)
+            .ToList();
+
+        // Seed edit buffers
+        _editQty.Clear();
+        _editUnit.Clear();
+        foreach (var item in _items)
+        {
+            _editQty[item.ListItemId] = item.Quantity;
+            _editUnit[item.ListItemId] = item.Unit;
+        }
     }
 
-    async Task Toggle(ListItemRow row)
+    private async Task ToggleCheckedAsync(AppListItem row)
     {
-        await Shopping.ToggleCheckedAsync(row);
-        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+        if (_busy) return;
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            row.IsChecked = !row.IsChecked;
+            await SupabaseService.Client.From<AppListItem>().Update(row);
+            await RefreshItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error updating item: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
-    async Task UpdateQty(ListItemRow row, string? raw)
+    private async Task SaveRowAsync(AppListItem row)
     {
-        if (!decimal.TryParse(raw, out var qty)) qty = row.Quantity;
-        await Shopping.UpdateQtyUnitAsync(row, qty, row.Unit);
-        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+        if (_busy) return;
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            if (!_editQty.TryGetValue(row.ListItemId, out var qty) || qty <= 0)
+                qty = 1;
+
+            _editUnit.TryGetValue(row.ListItemId, out var unit);
+            unit = string.IsNullOrWhiteSpace(unit) ? null : unit.Trim();
+
+            row.Quantity = qty;
+            row.Unit = unit;
+
+            await SupabaseService.Client.From<AppListItem>().Update(row);
+
+            _message = "Saved.";
+            await RefreshItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error saving: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
-    async Task UpdateUnit(ListItemRow row, string? unit)
+    private async Task DeleteAsync(AppListItem row)
     {
-        await Shopping.UpdateQtyUnitAsync(row, row.Quantity, unit);
-        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+        if (_busy) return;
+        _busy = true;
+        _message = null;
+
+        try
+        {
+            await SupabaseService.Client
+                .From<AppListItem>()
+                .Where(i => i.ListItemId == row.ListItemId)
+                .Delete();
+
+            _message = "Removed.";
+            await RefreshItemsAsync();
+        }
+        catch (Exception ex)
+        {
+            _message = $"Error deleting item: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
-    async Task Remove(ListItemRow row)
+    private string GetRowName(AppListItem row)
     {
-        await Shopping.DeleteAsync(row);
-        if (listId is not null) items = await Shopping.GetItemsAsync(listId.Value);
+        if (row.ItemId.HasValue && _catalogMap.TryGetValue(row.ItemId.Value, out var c))
+            return FormatCatalog(c);
+
+        return row.CustomName ?? "Unnamed";
+    }
+
+    private static string FormatCatalog(CatalogItem c)
+        => string.IsNullOrWhiteSpace(c.Brand) ? c.Name : $"{c.Name} ({c.Brand})";
+
+    private string GetEditQty(Guid id)
+    {
+        return _editQty.TryGetValue(id, out var v) ? v.ToString() : "1";
+    }
+
+    private void SetEditQty(Guid id, object? value)
+    {
+        // value comes in as string from the browser
+        var s = value?.ToString();
+        if (decimal.TryParse(s, out var d))
+            _editQty[id] = d;
+        else
+            _editQty[id] = 1;
+    }
+
+    private string GetEditUnit(Guid id)
+    {
+        return _editUnit.TryGetValue(id, out var v) ? (v ?? "") : "";
+    }
+
+    private void SetEditUnit(Guid id, object? value)
+    {
+        _editUnit[id] = value?.ToString();
     }
 }
+
+
