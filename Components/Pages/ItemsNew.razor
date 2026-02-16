@@ -28,7 +28,9 @@ else
 
             <div class="form-row">
                 <label>Pantry</label>
-                <InputSelect class="input" @bind-Value="_model.PantryId">
+                <InputSelect class="input"
+                             @bind-Value="_model.PantryId"
+                             @bind-Value:after="OnPantryChangedAsync">
                     <option value="">Select a pantry...</option>
                     @foreach (var p in _pantries)
                     {
@@ -206,6 +208,12 @@ else
     {
         var res = await SupabaseService.Client.From<CatalogItem>().Get();
         _catalog = (res.Models ?? new()).OrderBy(c => c.Name).ToList();
+    }
+
+    private async Task OnPantryChangedAsync()
+    {
+        _model.LocationId = null;
+        await LoadLocationsAsync(_model.PantryId);
     }
 
     private static string FormatCatalog(CatalogItem c)

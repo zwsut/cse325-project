@@ -18,7 +18,7 @@
     position: sticky;
     top: 0;
     height: 100vh;
-    overflow: auto;
+    /* overflow: auto; */
     box-shadow: 2px 0 0 rgba(0,0,0,0.08);
     transform: translateX(0);
     opacity: 1;

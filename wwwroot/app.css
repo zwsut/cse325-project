@@ -162,6 +162,14 @@ h1:focus {
     width: 100%;
 }
 
+.section-action {
+    font-size: 0.82rem;
+    text-decoration: none;
+    color: rgba(255,255,255,0.92);
+    opacity: 0.80;
+    width: auto !important;
+}
+
 /* ===============================
    Shared components (site-wide)
    =============================== */
