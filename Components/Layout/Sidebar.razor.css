@@ -16,6 +16,7 @@
     grid-template-rows: auto 1fr auto;
     gap: 2rem;
     height: 100%;
+    max-width: 280px;
 }
 
 .brand {

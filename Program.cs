@@ -125,7 +125,8 @@ app.MapPost("/auth/login", async (
 app.MapPost("/auth/signup", async (
     HttpContext httpContext,
     ISupabaseService supabaseService,
-    IAntiforgery antiforgery) =>
+    IAntiforgery antiforgery,
+    ILogger<Program> logger) =>
 {
     try
     {
@@ -192,10 +193,11 @@ app.MapPost("/auth/signup", async (
 
         try
         {
-            await EnsureSignupUserAndHouseholdAsync(supabaseService, parsedUserId, userEmail ?? email, displayName);
+            await EnsureSignupUserAndHouseholdAsync(supabaseService, parsedUserId, userEmail ?? email, displayName, accessToken, refreshToken, logger);
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogError(ex, "Failed to create user household for {Email}", userEmail ?? email);
             return Results.Redirect("/signup?error=household");
         }
 
@@ -319,67 +321,109 @@ static async Task EnsureSignupUserAndHouseholdAsync(
     ISupabaseService supabaseService,
     Guid userId,
     string email,
-    string displayName)
+    string displayName,
+    string accessToken,
+    string refreshToken,
+    ILogger logger)
 {
+    logger.LogInformation("Starting household creation for user {UserId} ({Email})", userId, email);
+
+    try
+    {
+        // Set the session so RLS policies know who the authenticated user is
+        await supabaseService.Client.Auth.SetSession(accessToken, refreshToken, true);
+        logger.LogInformation("Session set successfully for user {UserId}", userId);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to set session for user {UserId}", userId);
+        throw;
+    }
+
     // User profile should normally be created by DB trigger, but ensure it exists for signup flow.
-    var userResponse = await supabaseService.Client
-        .From<AppUser>()
-        .Where(u => u.UserId == userId)
-        .Limit(1)
-        .Get();
-
-    var appUser = userResponse.Models?.FirstOrDefault();
-    if (appUser is null)
+    try
     {
-        try
+        var userResponse = await supabaseService.Client
+            .From<AppUser>()
+            .Where(u => u.UserId == userId)
+            .Limit(1)
+            .Get();
+
+        var appUser = userResponse.Models?.FirstOrDefault();
+        logger.LogInformation("User profile lookup: exists={Exists}, recordCount={RecordCount}", appUser != null, userResponse.Models?.Count ?? 0);
+
+        if (appUser is null)
         {
-            await supabaseService.Client
-                .From<AppUser>()
-                .Insert(new AppUser
-                {
-                    UserId = userId,
-                    Email = email,
-                    DisplayName = displayName,
-                    CreatedAt = DateTime.UtcNow
-                });
-        }
-        catch
-        {
-            // Trigger path may have inserted profile row concurrently; ignore and continue.
+            try
+            {
+                await supabaseService.Client
+                    .From<AppUser>()
+                    .Insert(new AppUser
+                    {
+                        UserId = userId,
+                        Email = email,
+                        DisplayName = displayName,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                logger.LogInformation("User profile created successfully for {UserId}", userId);
+            }
+            catch (Exception ex)
+            {
+                // Trigger path may have inserted profile row concurrently; ignore and continue.
+                logger.LogWarning(ex, "Failed to insert user profile for {UserId} - may have been created by trigger", userId);
+            }
         }
     }
-
-    var membershipResponse = await supabaseService.Client
-        .From<GroupMember>()
-        .Where(m => m.UserId == userId)
-        .Limit(1)
-        .Get();
-
-    if ((membershipResponse.Models?.Count ?? 0) > 0)
+    catch (Exception ex)
     {
-        return;
+        logger.LogError(ex, "Error during user profile check/creation for {UserId}", userId);
+        throw;
     }
 
-    var group = new Group
+    // Check for existing group membership
+    try
     {
-        GroupId = Guid.NewGuid(),
-        Name = $"{displayName}'s Household",
-        CreatedByUser = userId,
-        CreatedAt = DateTime.UtcNow
-    };
+        var membershipResponse = await supabaseService.Client
+            .From<GroupMember>()
+            .Where(m => m.UserId == userId)
+            .Limit(1)
+            .Get();
 
-    await supabaseService.Client
-        .From<Group>()
-        .Insert(group);
+        logger.LogInformation("Membership check: count={MembershipCount}", membershipResponse.Models?.Count ?? 0);
 
-    await supabaseService.Client
-        .From<GroupMember>()
-        .Insert(new GroupMember
+        if ((membershipResponse.Models?.Count ?? 0) > 0)
         {
-            GroupId = group.GroupId,
-            UserId = userId,
-            Role = "owner",
-            JoinedAt = DateTime.UtcNow
-        });
+            logger.LogInformation("User {UserId} already has group membership, skipping group creation", userId);
+            return;
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error checking group membership for {UserId}", userId);
+        throw;
+    }
+
+    // Create group
+    try
+    {
+        logger.LogInformation("Attempting to create household for user {UserId} via function call", userId);
+        logger.LogInformation("RPC Parameters: p_user_id={UserId}, p_display_name={DisplayName}", userId, displayName);
+
+        // Call the database function that handles group and group_member creation with proper permissions
+        var rpcResponse = await supabaseService.Client.Rpc(
+            "ensure_signup_household",
+            new { p_user_id = userId, p_display_name = displayName }
+        );
+
+        logger.LogInformation("RPC response received: {Response}", rpcResponse);
+        logger.LogInformation("Household created successfully via function for user {UserId}", userId);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to create household for user {UserId}. Exception type: {ExceptionType}, Message: {Message}", userId, ex.GetType().Name, ex.Message);
+        throw;
+    }
+
+    logger.LogInformation("Household creation completed successfully for user {UserId}", userId);
 }
 
