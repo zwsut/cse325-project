@@ -252,6 +252,14 @@ else
             {
                 return;
             }
+            var verify = await SupabaseService.Client
+                .From<Pantry>()
+                .Where(p => p.PantryId == pantry.PantryId)
+                .Get();
+
+            if (verify.Models is null || verify.Models.Count == 0)
+                throw new Exception("Selected location no longer exists. Refresh and try again.");
+
 
             var locationName = Model.SubLocation?.Trim() ?? string.Empty;
             var notes = string.IsNullOrWhiteSpace(Model.Description) ? null : Model.Description.Trim();
@@ -311,8 +319,15 @@ else
                 return null;
             }
 
-            return await FindOrCreatePantryAsync(newPantryName);
+            var created = await FindOrCreatePantryAsync(newPantryName);
+
+            // Keep UI + state consistent so the next insert uses a real pantry id
+            _selectedPantryId = created.PantryId.ToString();
+            _newPantryName = string.Empty;
+
+            return created;
         }
+
 
         if (!Guid.TryParse(_selectedPantryId, out var pantryId))
         {
@@ -378,31 +393,35 @@ else
         }
     }
 
-    private async Task<Pantry> FindOrCreatePantryAsync(string pantryName)
-    {
-        var existing = _pantries.FirstOrDefault(p =>
-            string.Equals(p.Name?.Trim(), pantryName, StringComparison.OrdinalIgnoreCase));
-
-        if (existing is not null)
+        private async Task<Pantry> FindOrCreatePantryAsync(string pantryName)
         {
-            return existing;
+            var existing = _pantries.FirstOrDefault(p =>
+                string.Equals(p.Name?.Trim(), pantryName, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
+                return existing;
+
+            var pantry = new Pantry
+            {
+                PantryId = Guid.NewGuid(),
+                GroupId = _currentGroup!.GroupId,
+                Name = pantryName,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var insertRes = await SupabaseService.Client
+                .From<Pantry>()
+                .Insert(pantry);
+
+            var inserted = insertRes.Models?.FirstOrDefault();
+            if (inserted is null)
+                throw new Exception("Pantry insert failed (no row returned).");
+
+            // Important: keep local list in sync with DB result
+            _pantries.Add(inserted);
+            return inserted;
         }
 
-        var pantry = new Pantry
-        {
-            PantryId = Guid.NewGuid(),
-            GroupId = _currentGroup!.GroupId,
-            Name = pantryName,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        await SupabaseService.Client
-            .From<Pantry>()
-            .Insert(pantry);
-
-        _pantries.Add(pantry);
-        return pantry;
-    }
 
     private void CancelEdit()
     {

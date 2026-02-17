@@ -105,6 +105,19 @@
 
 .icon-btn.danger { color: #b42318; }
 
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 10px;
+    max-width: 720px; /* optional, keeps it from stretching weirdly */
+}
+
+.empty-state .btn-add {
+    width: fit-content; /* keeps button from stretching */
+}
+
+
 @media (max-width: 980px) {
     .page-title { font-size: 3.2rem; }
     .section-head h2 { font-size: 2rem; }

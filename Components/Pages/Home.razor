@@ -18,9 +18,12 @@ else if (!string.IsNullOrWhiteSpace(_error))
 }
 else if (_pantrySections.Count == 0)
 {
-    <p class="simple-muted">No inventory yet. Add a pantry/location and then add items.</p>
-    <a class="btn-add" href="/inventory/edit">Edit Locations</a>
+    <div class="empty-state">
+        <p class="simple-muted">No inventory yet. Add a pantry/location and then add items.</p>
+        <a class="btn-add" href="/inventory/edit">Edit Locations</a>
+    </div>
 }
+
 else
 {
     @if (!string.IsNullOrWhiteSpace(_message))
